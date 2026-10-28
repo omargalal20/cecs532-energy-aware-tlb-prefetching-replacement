@@ -1,0 +1,8 @@
+# ChampSim checkout, build output, traces (large) and run logs
+third_party/
+traces/
+results/raw/
+*.xz
+*.gz
+__pycache__/
+.venv/

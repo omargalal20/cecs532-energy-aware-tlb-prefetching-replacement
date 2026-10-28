@@ -107,7 +107,7 @@ cd cecs532-energy-aware-tlb-prefetching-replacement
 scripts/setup.sh
 ```
 
-This clones ChampSim into `third_party/`, builds its dependencies with vcpkg (first run takes several minutes) and produces `third_party/ChampSim/bin/champsim_baseline_lru`.
+This clones ChampSim and CACTI into `third_party/` at pinned commits, builds ChampSim's dependencies with vcpkg (first run takes several minutes) and produces `third_party/ChampSim/bin/champsim_baseline_lru` and `third_party/cacti/cacti`. Check CACTI with `cd third_party/cacti && ./cacti -infile cache.cfg`.
 
 ### 3. Obtain a trace
 

@@ -10,6 +10,11 @@ This repository contains the simulation infrastructure and results for a trace-d
 
 > Which TLB prefetching and STLB replacement policies provide the best trade-off between execution speed and estimated translation energy?
 
+**Objectives**
+1. Measure speedup and estimated translation energy for each configuration.
+2. Identify Pareto-optimal configurations.
+3. Characterize which workload types (for example irregular versus regular access patterns) favor which policy, to inform TLB design choices. This follows from the proposal's expected workload dependence.
+
 We answer it by simulating a baseline (LRU replacement, no TLB prefetching), ATP/SBFP, iTP and, if integration is feasible, their combination in ChampSim. Speedup and estimated energy are compared to identify Pareto-optimal configurations.
 
 **Expected outcome (hypotheses, not results).** The trade-off should vary by workload: aggressive prefetching should raise speed but also energy on irregular workloads, and free prefetching (SBFP) should be among the most efficient. The experiments may instead show one policy to be best on both measures, which is also a useful result.
@@ -135,14 +140,14 @@ Energy columns stay empty until `energy/cacti_per_access.csv` contains CACTI val
 
 ## Results
 
-Populated as runs complete.
+Populated as runs complete. Each trace is tagged with a workload type so results can be read per scenario (objective 3).
 
-| Trace | Config | IPC | Speedup vs LRU | STLB MPKI | Page walks | Energy vs LRU | EDP |
-|---|---|---|---|---|---|---|---|
-| — | `baseline_lru` | — | 1.00 | — | — | 1.00 | — |
-| — | `itp` | — | — | — | — | — | — |
-| — | `atp_sbfp` | — | — | — | — | — | — |
-| — | `atp_sbfp_itp` | — | — | — | — | — | — |
+| Trace | Workload type | Config | IPC | Speedup vs LRU | STLB MPKI | Page walks | Energy vs LRU | EDP |
+|---|---|---|---|---|---|---|---|---|
+| — | — | `baseline_lru` | — | 1.00 | — | — | 1.00 | — |
+| — | — | `itp` | — | — | — | — | — | — |
+| — | — | `atp_sbfp` | — | — | — | — | — | — |
+| — | — | `atp_sbfp_itp` | — | — | — | — | — | — |
 
 ## Project Status
 

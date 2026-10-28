@@ -1,0 +1,7 @@
+structure,read_nj,write_nj,leakage_mw,source
+DTLB,TBD,TBD,TBD,CACTI (Ayushi)
+ITLB,TBD,TBD,TBD,CACTI (Ayushi)
+STLB,TBD,TBD,TBD,CACTI (Ayushi)
+PQ,TBD,TBD,TBD,CACTI (Ayushi)
+SBFP_FDT,TBD,TBD,TBD,CACTI (Ayushi)
+PSC,TBD,TBD,TBD,CACTI (Ayushi)

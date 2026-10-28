@@ -1,0 +1,57 @@
+ChampSim page-table-walker counters (prototype)
+
+Adds four counters to PageTableWalker and prints one line at the end of a run:
+  [PROTO-PTW] <name> walks=N prefetch_walks=N psc_lookups=N psc_hits=N
+ChampSim's own output has no walker statistics; these counts supply the
+per-walk activity needed for the energy model.
+
+Applies to: ChampSim commit 410cee6 (pinned in scripts/setup.sh)
+Apply:      cd third_party/ChampSim && git apply ../../prototypes/ptw-counters.patch
+Build:      ./config.sh <config>.json && make
+Revert:     git checkout -- inc/ptw.h src/ptw.cc
+
+Checked on 429.mcf-51B (0 warmup, 2M instructions, baseline LRU config):
+  walks = STLB misses = 39,337; PSC lookups = 4 per walk; PSC hits = 92.3%.
+Not checked: prefetch_walks (needs an STLB prefetcher). Counters are not reset
+after warmup, so run with --warmup-instructions 0 to compare against STLB stats.
+These counters are not yet part of ChampSim's stats framework.
+
+diff --git a/inc/ptw.h b/inc/ptw.h
+index 736ca8f..cea252d 100644
+--- a/inc/ptw.h
++++ b/inc/ptw.h
+@@ -92,6 +92,9 @@ public:
+   const champsim::address CR3_addr;
+ 
+   explicit PageTableWalker(champsim::ptw_builder builder);
++  ~PageTableWalker();
++  // PROTOTYPE counters (not yet wired into the stats framework)
++  uint64_t proto_walks = 0, proto_prefetch_walks = 0, proto_psc_hits = 0, proto_psc_lookups = 0;
+ 
+   long operate() final;
+ 
+diff --git a/src/ptw.cc b/src/ptw.cc
+index b555659..0362cd6 100644
+--- a/src/ptw.cc
++++ b/src/ptw.cc
+@@ -53,11 +53,20 @@ PageTableWalker::mshr_type::mshr_type(const request_type& req, std::size_t level
+   asid[1] = req.asid[1];
+ }
+ 
++PageTableWalker::~PageTableWalker()
++{
++  fmt::print("[PROTO-PTW] {} walks={} prefetch_walks={} psc_lookups={} psc_hits={}\n", NAME, proto_walks, proto_prefetch_walks, proto_psc_lookups, proto_psc_hits);
++}
++
+ auto PageTableWalker::handle_read(const request_type& handle_pkt, channel_type* ul) -> std::optional<mshr_type>
+ {
++  ++proto_walks;
++  if (handle_pkt.type == access_type::PREFETCH) ++proto_prefetch_walks;
+   pscl_entry walk_init = {handle_pkt.v_address, CR3_addr, std::size(pscl)};
+   std::vector<std::optional<pscl_entry>> pscl_hits;
+   std::transform(std::begin(pscl), std::end(pscl), std::back_inserter(pscl_hits), [walk_init](auto& x) { return x.check_hit(walk_init); });
++  proto_psc_lookups += std::size(pscl_hits);
++  proto_psc_hits += std::count_if(std::begin(pscl_hits), std::end(pscl_hits), [](const auto& h) { return h.has_value(); });
+   walk_init =
+       std::accumulate(std::begin(pscl_hits), std::end(pscl_hits), std::optional<pscl_entry>(walk_init), [](auto x, auto& y) { return y.value_or(*x); }).value();
+ 

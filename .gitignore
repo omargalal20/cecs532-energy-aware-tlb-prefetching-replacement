@@ -6,3 +6,4 @@ results/raw/
 *.gz
 __pycache__/
 .venv/
+*.log

@@ -71,6 +71,17 @@ Per-access energies and leakage come from [CACTI](https://github.com/HewlettPack
 | Traces | Accessible memory-intensive traces; final list to be fixed |
 | Warmup / simulation | Smoke tests: 10M / 20M instructions. Reported runs: to be set once runtime is measured |
 
+### Trace selection
+
+The DPC-3 SPEC traces were assembled for data-cache prefetching, not for TLB behaviour, so we do not assume they stress the STLB. Each candidate is run once with `baseline_lru` (10M warmup + 20M simulated instructions) and its STLB misses per thousand instructions (MPKI) is recorded. Traces with high STLB MPKI are kept. If the SPEC traces do not stress the STLB, GAP (graph) and XSBench (scientific proxy) traces are the fallback candidates; their availability in ChampSim format is not yet verified.
+
+| Trace | Source of the number in the name | STLB MPKI | STLB miss latency (cycles) | Decision |
+|---|---|---|---|---|
+| `429.mcf-22B` | SimPoint slice 22, weight 0.114 | 2.42 | 261.8 | Candidate (low STLB pressure) |
+| `429.mcf-51B` | SimPoint slice 51, weight 0.323 (heaviest slice of mcf) | 11.23 | 110.4 | Keep (high STLB pressure) |
+
+MPKI is computed as STLB misses divided by simulated instructions, times 1000. SimPoint slice numbers and weights come from `weights-and-simpoints-speccpu.tar.gz` on the DPC-3 trace server; the site does not define the "B" suffix itself. Further candidates (for example `605.mcf_s` and a streaming workload) are added to this table as they are measured.
+
 ## Repository Structure
 
 ```

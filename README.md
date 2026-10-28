@@ -1,14 +1,18 @@
-# Energy-Aware Evaluation of TLB Prefetching and STLB Replacement
+# Energy-Aware Evaluation of TLB Prefetching and Replacement
 
 **CECS 532 — Memory Design Implementation | CSULB Fall 2026 | Group 6**
 
-This repository contains the simulation infrastructure and results for a trace-driven study of how TLB prefetching (ATP with SBFP) and second-level TLB (STLB) replacement (iTP) trade performance against energy. We extend ChampSim, which has no energy model, with access-level energy accounting based on CACTI, and compare configurations by speedup, energy and energy-delay product (EDP).
+This repository contains the simulation infrastructure and results for a trace-driven study of TLB prefetching (ATP with SBFP) and second-level TLB (STLB) replacement (iTP). ChampSim has no energy model, so we add access-level energy accounting based on CACTI and compare configurations by speedup and estimated translation energy.
 
 ---
 
 ## Research Question
 
-> Do TLB prefetching and instruction-aware STLB replacement, which are published as performance optimizations, still pay off once the energy of the extra TLB, prefetch-queue and page-walk activity is counted, and which configurations are Pareto-optimal in speedup versus energy?
+> Which TLB prefetching and STLB replacement policies provide the best trade-off between execution speed and estimated translation energy?
+
+We answer it by simulating a baseline (LRU replacement, no TLB prefetching), ATP/SBFP, iTP and, if integration is feasible, their combination in ChampSim. Speedup and estimated energy are compared to identify Pareto-optimal configurations.
+
+**Expected outcome (hypotheses, not results).** The trade-off should vary by workload: aggressive prefetching should raise speed but also energy on irregular workloads, and free prefetching (SBFP) should be among the most efficient. The experiments may instead show one policy to be best on both measures, which is also a useful result.
 
 ## Background
 
@@ -17,7 +21,7 @@ Every memory access needs a virtual-to-physical translation. Translations are ca
 - **Agile TLB Prefetching (ATP) with Sampling-Based Free TLB Prefetching (SBFP).** ATP selects among several TLB prefetchers at run time. SBFP exploits the fact that a page-table walk fetches a cache line holding neighbouring PTEs and keeps the useful ones as "free" prefetches [1].
 - **iTP (instruction-aware STLB replacement).** iTP biases STLB replacement toward instruction translations, which are more costly to miss, and is designed to cooperate with cache replacement [2].
 
-Both reduce page walks, but at the price of extra structures (prefetch queue, free-distance tables) and extra accesses. The ISCA 2021 paper reports an energy evaluation for its prefetcher [1]. To our knowledge, energy for STLB replacement policies, and the joint effect of prefetching and replacement, have not been compared in one common setup. This project provides that comparison. Our implementations are simplified versions of the published designs, and every simplification is documented alongside the code.
+Both can reduce page walks, but speculative prefetches consume energy and affect which translations remain in the STLB. Published TLB work mostly reports speedup, and energy is evaluated for only some designs; the ISCA 2021 paper estimates energy with CACTI for its prefetcher [1]. This project compares the policies in one common setup, with speed and estimated energy side by side. Our implementations are simplified versions of the published designs, and every simplification is documented alongside the code.
 
 ## Evaluated Configurations
 
@@ -27,7 +31,7 @@ Both reduce page walks, but at the price of extra structures (prefetch queue, fr
 | `itp` | none | iTP | Required |
 | `atp_sbfp` | ATP + SBFP | LRU | Required |
 | `atp_sbfp_itp` | ATP + SBFP | iTP | Required, if integration is feasible |
-| `chirp`, `sbfp_only`, STLB-size and page-size sweeps, 4-core | — | — | Stretch |
+| STLB-capacity and page-size sensitivity, 4-core runs | — | — | Stretch |
 
 ## Methodology
 
@@ -48,9 +52,9 @@ E_total   = E_dynamic + E_leakage + E_pagewalk_memory
 EDP       = E_total · t_run
 ```
 
-Per-access energies and leakage come from [CACTI](https://github.com/HewlettPackard/cacti) models of each structure (`energy/cacti_per_access.csv`). Page-walk memory references are costed with a published per-access cache/DRAM energy figure. CACTI requires power-of-two sizes, so the 1536-entry STLB (128 sets × 12 ways) is modeled at nearby power-of-two sizes. This approximation is stated wherever results are reported.
+Per-access energies and leakage come from [CACTI](https://github.com/HewlettPackard/cacti) models of each structure (`energy/cacti_per_access.csv`). Page-walk accesses to DRAM use a separate energy estimate. CACTI requires power-of-two sizes, so the 1536-entry STLB (128 sets × 12 ways) is modeled at nearby power-of-two sizes. This approximation is stated wherever results are reported.
 
-**Metrics.** IPC and speedup over `baseline_lru`; STLB MPKI; page walks; prefetch accuracy and coverage; total translation energy; EDP.
+**Metrics.** IPC and speedup over `baseline_lru`; STLB misses (MPKI); page-walk memory references; prefetch accuracy; estimated translation energy; EDP as a derived comparison.
 
 ## Experimental Setup
 
@@ -59,7 +63,7 @@ Per-access energies and leakage come from [CACTI](https://github.com/HewlettPack
 | Simulator | ChampSim `410cee6`, single core (4-core as stretch) |
 | Core / TLBs | ChampSim defaults: 4 GHz core, STLB 128 sets × 12 ways, 4 KB pages |
 | STLB prefetch queue | `pq_size = 8` (default is 0, which disables STLB prefetching) |
-| Traces | Memory-intensive workloads (GAP, XSBench, SPEC-based); final list to be fixed |
+| Traces | Accessible memory-intensive traces; final list to be fixed |
 | Warmup / simulation | Smoke tests: 10M / 20M instructions. Reported runs: to be set once runtime is measured |
 
 ## Repository Structure
@@ -167,4 +171,4 @@ Populated as runs complete.
 
 ## Authors
 
-Omar Galal, Johnny Van, Niyati, Ayushi and Sanket — CECS 532, California State University, Long Beach.
+Niyati Nikunj Kapadia, Johnny Van, Omar Elhanafy, Ayushi Mistry and Sanketkumar Rakeshbhai Patel — CECS 532, California State University, Long Beach.

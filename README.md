@@ -110,7 +110,7 @@ Per-access energies and leakage come from [CACTI](https://github.com/HewlettPack
 - We have not investigated why the traces differ in STLB behaviour; the table reports measurements only.
 - GAP (graph) and XSBench (scientific proxy) traces may stress the TLB more, but their availability in ChampSim format is not verified.
 
-**Reproducing a row.** Download the trace from the DPC-3 server into `traces/`, then run `scripts/run_baseline.sh traces/<trace>.champsimtrace.xz 10 20`. The raw output goes to `results/raw/baseline_lru__<trace>.txt`. The MPKI, latency and instruction share are computed from the `STLB`, `DTLB` and `ITLB` lines of that file.
+**Reproducing a row.** Download the trace from the DPC-3 server into `traces/` (sources and the screening steps for new traces are in [docs/trace-sources.md](docs/trace-sources.md)), then run `scripts/run_baseline.sh traces/<trace>.champsimtrace.xz 10 20`. The raw output goes to `results/raw/baseline_lru__<trace>.txt`. The MPKI, latency and instruction share are computed from the `STLB`, `DTLB` and `ITLB` lines of that file.
 
 ## Repository Structure
 
@@ -119,7 +119,10 @@ Per-access energies and leakage come from [CACTI](https://github.com/HewlettPack
 ├── configs/baseline_lru.json     ChampSim configuration of the LRU baseline
 ├── scripts/
 │   ├── setup.sh                  Clone pinned ChampSim, install libraries, build
+│   ├── fetch_traces.sh           Download the selected traces into traces/
 │   └── run_baseline.sh           Run one trace and save raw output
+├── docs/trace-sources.md         Trace sources, what we verified, how to screen a new trace
+├── prototypes/ptw-counters.patch ChampSim page-table-walker counters (prototype)
 ├── energy/
 │   ├── energy_fusion.py          Counters × CACTI energy → energy, speedup, EDP
 │   └── cacti_per_access.csv      Per-access energy and leakage per structure
@@ -152,7 +155,7 @@ This clones ChampSim and CACTI into `third_party/` at pinned commits, builds Cha
 
 ### 3. Obtain a trace
 
-Place `*.champsimtrace.xz` files in `traces/`. The DPC-3 SPEC traces are available from <https://dpc3.compas.cs.stonybrook.edu/champsim-traces/speccpu/>. Traces are large and are not stored in git.
+Run `scripts/fetch_traces.sh` to download the three selected traces into `traces/` (about 2.2 GB; add `--backups` for three more). Traces are large and are not stored in git. Other trace sources are described in [docs/trace-sources.md](docs/trace-sources.md).
 
 ### 4. Run the baseline
 

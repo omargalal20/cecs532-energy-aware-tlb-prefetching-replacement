@@ -68,19 +68,49 @@ Per-access energies and leakage come from [CACTI](https://github.com/HewlettPack
 | Simulator | ChampSim `410cee6`, single core (4-core as stretch) |
 | Core / TLBs | ChampSim defaults: 4 GHz core, STLB 128 sets × 12 ways, 4 KB pages |
 | STLB prefetch queue | `pq_size = 8` (default is 0, which disables STLB prefetching) |
-| Traces | Accessible memory-intensive traces; final list to be fixed |
+| Traces | `429.mcf-51B`, `620.omnetpp_s-874B`, `623.xalancbmk_s-700B`, selected by STLB MPKI (see Trace selection below) |
 | Warmup / simulation | Smoke tests: 10M / 20M instructions. Reported runs: to be set once runtime is measured |
 
 ### Trace selection
 
-The DPC-3 SPEC traces were assembled for data-cache prefetching, not for TLB behaviour, so we do not assume they stress the STLB. Each candidate is run once with `baseline_lru` (10M warmup + 20M simulated instructions) and its STLB misses per thousand instructions (MPKI) is recorded. Traces with high STLB MPKI are kept. If the SPEC traces do not stress the STLB, GAP (graph) and XSBench (scientific proxy) traces are the fallback candidates; their availability in ChampSim format is not yet verified.
+**Why screen traces.** The DPC-3 SPEC traces were assembled for data-cache prefetching, not for TLB behaviour, so we do not assume they stress the STLB. Each candidate is run once with `baseline_lru` (10M warmup + 20M simulated instructions) and ranked by its STLB misses per thousand instructions (MPKI). Traces with high MPKI are kept, because a TLB policy cannot show a difference on a trace that barely misses.
 
-| Trace | Source of the number in the name | STLB MPKI | STLB miss latency (cycles) | Decision |
-|---|---|---|---|---|
-| `429.mcf-22B` | SimPoint slice 22, weight 0.114 | 2.42 | 261.8 | Candidate (low STLB pressure) |
-| `429.mcf-51B` | SimPoint slice 51, weight 0.323 (heaviest slice of mcf) | 11.23 | 110.4 | Keep (high STLB pressure) |
+**Result.** 14 traces were screened (the heaviest published SimPoint slice of 12 benchmarks, plus two more mcf slices). Eight of the 14 have an STLB MPKI below 1.
 
-MPKI is computed as STLB misses divided by simulated instructions, times 1000. SimPoint slice numbers and weights come from `weights-and-simpoints-speccpu.tar.gz` on the DPC-3 trace server; the site does not define the "B" suffix itself. Further candidates (for example `605.mcf_s` and a streaming workload) are added to this table as they are measured.
+| Trace | SimPoint weight | STLB MPKI | STLB miss latency (cycles) | Instruction share of STLB accesses | Decision |
+|---|---|---|---|---|---|
+| `429.mcf-51B` | 0.323 | 11.23 | 110.4 | 0.0% | **Selected** |
+| `471.omnetpp-188B` | 0.945 | 4.30 | 65.8 | 2.1% | Backup |
+| `620.omnetpp_s-874B` | 0.828 | 4.26 | 93.2 | 7.7% | **Selected** |
+| `429.mcf-192B` | 0.185 | 2.56 | 144.5 | 0.0% | Backup |
+| `429.mcf-22B` | 0.114 | 2.42 | 261.8 | 0.0% | Backup |
+| `623.xalancbmk_s-700B` | 0.413 | 1.86 | 23.6 | 0.7% | **Selected** |
+| `450.soplex-247B` | 0.487 | 0.94 | 123.9 | 0.0% | Dropped (MPKI < 1) |
+| `619.lbm_s-4268B` | 0.418 | 0.73 | 212.5 | 0.0% | Dropped |
+| `605.mcf_s-665B` | 0.441 | 0.27 | 146.2 | 0.0% | Dropped |
+| `602.gcc_s-734B` | 0.641 | 0.20 | 274.5 | 0.0% | Dropped |
+| `483.xalancbmk-716B` | 0.375 | 0.18 | 305.1 | 0.0% | Dropped |
+| `649.fotonik3d_s-1176B` | 0.497 | 0.14 | 242.8 | 0.0% | Dropped |
+| `473.astar-153B` | 0.611 | 0.07 | 39.8 | 0.0% | Dropped |
+| `654.roms_s-842B` | 0.431 | 0.00 | 250.8 | 0.0% | Dropped |
+
+**How to read the table.**
+- *STLB MPKI* is STLB misses divided by simulated instructions, times 1000. Miss rate alone is misleading: `429.mcf-22B` misses on 63% of its STLB accesses but has far fewer misses per instruction than `429.mcf-51B`.
+- *Instruction share* is the fraction of STLB accesses that come from instruction fetches, computed as (ITLB misses − ITLB merged misses) / STLB accesses. It matters for iTP, which treats instruction translations specially.
+- *SimPoint weight* is how much of the full program the slice represents. The number in a trace name is its SimPoint slice index, taken from `weights-and-simpoints-speccpu.tar.gz` on the DPC-3 trace server; the site does not define the "B" suffix.
+- Each value comes from a single 20M-instruction measurement window per trace.
+
+**Selected set and why.**
+- `429.mcf-51B` has by far the highest STLB pressure, which is what ATP and SBFP act on.
+- `620.omnetpp_s-874B` is the second program with high MPKI and the only selected trace with a meaningful instruction share (7.7%).
+- `623.xalancbmk_s-700B` has moderate MPKI but cheap walks (23.6 cycles per miss against 93 to 110 for the other two), which gives a contrasting regime. Choosing it for that contrast is a design decision, not a measured result.
+
+**Limitations.**
+- None of the 14 traces has substantial instruction pressure on the STLB (maximum 7.7%), and the three mcf traces have none. iTP can therefore only be tested meaningfully on `620.omnetpp_s-874B` (weakly on `471.omnetpp-188B`), so iTP results should be read with this in mind.
+- We have not investigated why the traces differ in STLB behaviour; the table reports measurements only.
+- GAP (graph) and XSBench (scientific proxy) traces may stress the TLB more, but their availability in ChampSim format is not verified.
+
+**Reproducing a row.** Download the trace from the DPC-3 server into `traces/`, then run `scripts/run_baseline.sh traces/<trace>.champsimtrace.xz 10 20`. The raw output goes to `results/raw/baseline_lru__<trace>.txt`. The MPKI, latency and instruction share are computed from the `STLB`, `DTLB` and `ITLB` lines of that file.
 
 ## Repository Structure
 
@@ -165,7 +195,7 @@ Populated as runs complete. Each trace is tagged with a workload type so results
 | Milestone | Status |
 |---|---|
 | Proposal | Complete |
-| Repository, build and baseline run | In progress |
+| Repository, build, baseline run and trace screening | Complete (14 traces screened, 3 selected) |
 | ATP/SBFP and iTP integration, counters | Not started |
 | CACTI models of TLB, PQ and SBFP structures | In progress |
 | Full experiment set and energy fusion | Not started |

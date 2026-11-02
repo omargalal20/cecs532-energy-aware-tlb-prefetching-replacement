@@ -1,20 +1,10 @@
 #!/usr/bin/env python3
-"""Fuse ChampSim counters with CACTI per-access energy into energy, speedup and EDP.
+"""Combine ChampSim counters with available CACTI per-access values.
 
-Usage:
-    python3 energy/energy_fusion.py results/raw/*.txt --out results/results_table.csv
-
-Raw files are named <config>__<trace>.txt (see scripts/run_baseline.sh). The config
-named "baseline_lru" is the reference for speedup and energy ratios.
-
-Energy model (nJ):
-    E_dynamic = sum_s (reads_s * read_nj_s + writes_s * write_nj_s)
-    E_leakage = sum_s leakage_mw_s * runtime_s          (runtime = cycles / frequency)
-    E_total   = E_dynamic + E_leakage
-    EDP       = E_total * runtime_s
-
-Status: stub. Only STLB counters are wired in; extend COUNTER_MAP as new structures
-(PQ, SBFP free-distance table, page-structure caches) expose counters.
+This reports energy for the modeled components with sufficient inputs. It does not
+call a partial sum total translation energy: DTLB, ITLB, prefetch structures, or
+DRAM may be missing. The optional DRAM input is an explicit per-walk estimate,
+not a measured DRAM-reference count.
 """
 import argparse
 import csv
@@ -22,74 +12,157 @@ import re
 import sys
 from pathlib import Path
 
-CPU_GHZ = 4.0  # matches ooo_cpu frequency (4000 MHz) in ChampSim's default config
+DEFAULT_CPU_GHZ = 4.0
 CACTI_CSV = Path(__file__).with_name("cacti_per_access.csv")
 BASELINE = "baseline_lru"
 
-COLUMNS = ["trace", "config", "instructions", "cycles", "ipc", "speedup_vs_lru",
-           "stlb_accesses", "stlb_misses", "stlb_mpki", "page_walks",
-           "energy_nj", "energy_vs_lru", "edp"]
+COLUMNS = [
+    "trace", "config", "instructions", "cycles", "ipc", "speedup_vs_lru",
+    "stlb_accesses", "stlb_misses", "stlb_mpki", "page_walks", "page_walk_source",
+    "ptw_prefetch_walks", "psc_lookups", "psc_hits",
+    "stlb_energy_nj", "psc_energy_nj", "known_onchip_energy_nj",
+    "dram_energy_nj", "known_components", "energy_coverage",
+    # Preserve the existing result-table fields. They stay blank until the full
+    # modeled structure set and DRAM accounting are implemented and populated.
+    "energy_nj", "energy_vs_lru", "edp",
+]
 
-IPC_RE = re.compile(r"cumulative IPC: (\S+) instructions: (\d+) cycles: (\d+)")
-STLB_RE = re.compile(r"cpu\d+->\S*STLB TOTAL\s+ACCESS:\s*(\d+)\s+HIT:\s*(\d+)\s+MISS:\s*(\d+)")
+IPC_RE = re.compile(r"cumulative IPC:\s*(\S+)\s+instructions:\s*(\d+)\s+cycles:\s*(\d+)")
+STLB_RE = re.compile(
+    r"cpu\d+->\S*STLB TOTAL\s+ACCESS:\s*(\d+)\s+HIT:\s*(\d+)\s+MISS:\s*(\d+)"
+)
+PTW_RE = re.compile(
+    r"\[PROTO-PTW\]\s+\S+\s+walks=(\d+)\s+prefetch_walks=(\d+)"
+    r"\s+psc_lookups=(\d+)\s+psc_hits=(\d+)"
+)
 
 
 def parse_run(path: Path) -> dict:
-    text = path.read_text()
-    ipc = IPC_RE.search(text)
-    stlb = STLB_RE.search(text)
-    if not (ipc and stlb):
+    text = path.read_text(errors="replace")
+    ipc_match = IPC_RE.search(text)
+    stlb_match = STLB_RE.search(text)
+    if not (ipc_match and stlb_match):
         sys.exit(f"{path}: could not find IPC / STLB lines; check ChampSim output format")
-    instr, cycles = int(ipc.group(2)), int(ipc.group(3))
-    accesses, misses = int(stlb.group(1)), int(stlb.group(3))
+
+    instructions, cycles = int(ipc_match.group(2)), int(ipc_match.group(3))
+    accesses, _, misses = map(int, stlb_match.groups())
+    ptw_match = PTW_RE.search(text)
     config, trace = path.stem.split("__", 1)
-    return {"trace": trace, "config": config, "instructions": instr, "cycles": cycles,
-            "ipc": instr / cycles, "stlb_accesses": accesses, "stlb_misses": misses,
-            "stlb_mpki": 1000 * misses / instr,
-            "page_walks": misses}  # TODO: replace with the PTW counter once confirmed
+
+    if ptw_match:
+        walks, prefetch_walks, psc_lookups, psc_hits = map(int, ptw_match.groups())
+        walk_source = "PTW prototype counter"
+    else:
+        # A useful baseline proxy, but not an independently measured PTW count.
+        walks, prefetch_walks, psc_lookups, psc_hits = misses, None, None, None
+        walk_source = "STLB misses (proxy)"
+
+    return {
+        "trace": trace,
+        "config": config,
+        "instructions": instructions,
+        "cycles": cycles,
+        "ipc": instructions / cycles if cycles else 0.0,
+        "stlb_accesses": accesses,
+        "stlb_misses": misses,
+        "stlb_mpki": 1000 * misses / instructions if instructions else 0.0,
+        "page_walks": walks,
+        "page_walk_source": walk_source,
+        "ptw_prefetch_walks": prefetch_walks,
+        "psc_lookups": psc_lookups,
+        "psc_hits": psc_hits,
+    }
 
 
-def load_cacti() -> dict:
-    with CACTI_CSV.open() as f:
-        return {r["structure"]: r for r in csv.DictReader(f)}
+def load_cacti(path: Path) -> dict:
+    with path.open(newline="") as f:
+        return {row["structure"]: row for row in csv.DictReader(f)}
 
 
-def energy_nj(run: dict, cacti: dict) -> float | None:
-    row = cacti.get("STLB")
-    if row is None or "TBD" in (row["read_nj"], row["write_nj"], row["leakage_mw"]):
-        return None  # CACTI numbers not filled in yet
-    runtime_s = run["cycles"] / (CPU_GHZ * 1e9)
-    dynamic = run["stlb_accesses"] * float(row["read_nj"])  # TODO: split reads/writes, add PQ/SBFP/PSC
-    leakage = float(row["leakage_mw"]) * 1e-3 * runtime_s * 1e9  # mW -> W -> J -> nJ
+def cacti_row_ready(cacti: dict, structure: str) -> bool:
+    row = cacti.get(structure)
+    if not row:
+        return False
+    try:
+        return all(float(row[key]) >= 0 for key in ("read_nj", "write_nj", "leakage_mw"))
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def component_energy_nj(
+    structure: str, reads: int, writes: int, runtime_s: float, cacti: dict
+) -> float | None:
+    """Return dynamic plus leakage energy when CACTI values are available."""
+    if not cacti_row_ready(cacti, structure):
+        return None
+    row = cacti[structure]
+    dynamic = reads * float(row["read_nj"]) + writes * float(row["write_nj"])
+    # mW * seconds * 1e6 = nJ
+    leakage = float(row["leakage_mw"]) * runtime_s * 1e6
     return dynamic + leakage
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("runs", nargs="+", type=Path, help="raw ChampSim output files")
-    ap.add_argument("--out", type=Path, default=Path("results/results_table.csv"))
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("runs", nargs="+", type=Path, help="raw ChampSim output files")
+    parser.add_argument("--out", type=Path, default=Path("results/results_table.csv"))
+    parser.add_argument("--cacti-csv", type=Path, default=CACTI_CSV)
+    parser.add_argument("--cpu-ghz", type=float, default=DEFAULT_CPU_GHZ)
+    parser.add_argument(
+        "--dram-nj-per-walk",
+        type=float,
+        help=("Optional explicit DRAM-energy approximation per page walk. "
+              "This is not a measured DRAM-reference count."),
+    )
+    args = parser.parse_args()
 
-    cacti = load_cacti()
-    runs = [parse_run(p) for p in args.runs]
-    base = {r["trace"]: r for r in runs if r["config"] == BASELINE}
+    if args.cpu_ghz <= 0:
+        parser.error("--cpu-ghz must be positive")
+    if args.dram_nj_per_walk is not None and args.dram_nj_per_walk < 0:
+        parser.error("--dram-nj-per-walk cannot be negative")
 
-    for r in runs:
-        e = energy_nj(r, cacti)
-        runtime_s = r["cycles"] / (CPU_GHZ * 1e9)
-        b = base.get(r["trace"])
-        r["energy_nj"] = e
-        r["edp"] = e * runtime_s if e is not None else None
-        r["speedup_vs_lru"] = r["ipc"] / b["ipc"] if b else None
-        be = energy_nj(b, cacti) if b else None
-        r["energy_vs_lru"] = e / be if (e is not None and be) else None
+    cacti = load_cacti(args.cacti_csv)
+    runs = [parse_run(path) for path in args.runs]
+    baseline = {r["trace"]: r for r in runs if r["config"] == BASELINE}
+
+    for run in runs:
+        runtime_s = run["cycles"] / (args.cpu_ghz * 1e9)
+        # ChampSim's current TOTAL ACCESS counter does not split reads/writes.
+        # Until a write/insert counter exists, it is treated as read-like accesses.
+        run["stlb_energy_nj"] = component_energy_nj(
+            "STLB", run["stlb_accesses"], 0, runtime_s, cacti
+        )
+
+        # The PTW prototype reports PSC lookups; without it, leave PSC energy unknown.
+        run["psc_energy_nj"] = (
+            component_energy_nj("PSC", run["psc_lookups"], 0, runtime_s, cacti)
+            if run["psc_lookups"] is not None
+            else None
+        )
+
+        known = [run[k] for k in ("stlb_energy_nj", "psc_energy_nj") if run[k] is not None]
+        run["known_onchip_energy_nj"] = sum(known) if known else None
+        run["known_components"] = ",".join(
+            name for name, value in (
+                ("STLB", run["stlb_energy_nj"]), ("PSC", run["psc_energy_nj"])
+            ) if value is not None
+        )
+        run["energy_coverage"] = "partial" if run["known_components"] else "no CACTI inputs"
+        run["dram_energy_nj"] = (
+            run["page_walks"] * args.dram_nj_per_walk
+            if args.dram_nj_per_walk is not None
+            else None
+        )
+
+        base = baseline.get(run["trace"])
+        run["speedup_vs_lru"] = run["ipc"] / base["ipc"] if base and base["ipc"] else None
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=COLUMNS)
-        w.writeheader()
-        for r in sorted(runs, key=lambda r: (r["trace"], r["config"])):
-            w.writerow({c: ("" if r[c] is None else r[c]) for c in COLUMNS})
+        writer = csv.DictWriter(f, fieldnames=COLUMNS)
+        writer.writeheader()
+        for run in sorted(runs, key=lambda row: (row["trace"], row["config"])):
+            writer.writerow({key: ("" if run.get(key) is None else run.get(key)) for key in COLUMNS})
     print(f"Wrote {args.out}")
 
 

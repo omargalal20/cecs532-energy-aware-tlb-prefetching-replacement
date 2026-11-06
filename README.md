@@ -108,9 +108,49 @@ Per-access energies and leakage come from [CACTI](https://github.com/HewlettPack
 **Limitations.**
 - None of the 14 traces has substantial instruction pressure on the STLB (maximum 7.7%), and the three mcf traces have none. iTP can therefore only be tested meaningfully on `620.omnetpp_s-874B` (weakly on `471.omnetpp-188B`), so iTP results should be read with this in mind.
 - We have not investigated why the traces differ in STLB behaviour; the table reports measurements only.
-- GAP (graph) and XSBench (scientific proxy) traces may stress the TLB more, but their availability in ChampSim format is not verified.
+- GAP (graph) was successfully screened using ChampSim; they show substantial STLB activity but 0% instruction share.
+- XSBench (scientific proxy) traces may stress the TLB more, but their availability in ChampSim format is not verified.
 
 **Reproducing a row.** Download the trace from the DPC-3 server into `traces/` (sources and the screening steps for new traces are in [docs/trace-sources.md](docs/trace-sources.md)), then run `scripts/run_baseline.sh traces/<trace>.champsimtrace.xz 10 20`. The raw output goes to `results/raw/baseline_lru__<trace>.txt`. The MPKI, latency and instruction share are computed from the `STLB`, `DTLB` and `ITLB` lines of that file.
+
+### GAP trace screening
+
+In addition to the DPC-3 SPEC traces, we obtained three GAP graph-processing traces and evaluated them using ChampSim's existing baseline configuration.
+
+**Experimental setup**
+
+- Warmup: 10 million instructions
+- Simulation: 20 million instructions
+- Configuration: Existing ChampSim baseline
+- Workload: GAP graph-processing traces
+- Purpose: Evaluate STLB pressure and identify additional workloads for TLB prefetching and replacement experiments.
+
+**Baseline results**
+
+| Metric | bc.kron-2608B | bc.road-131B | bc.twitter-1658B |
+|---|---:|---:|---:|
+| IPC | 0.2279 | 0.1215 | 0.2072 |
+| Instructions | 20,000,002 | 20,000,000 | 20,000,003 |
+| Cycles | 87,763,757 | 164,555,250 | 96,513,323 |
+| STLB accesses | 369,860 | 308,901 | 382,395 |
+| STLB hits | 6,989 | 136,673 | 8,364 |
+| STLB misses | 362,871 | 172,228 | 374,031 |
+| STLB MPKI | 18.14 | 8.61 | 18.70 |
+| STLB average miss latency (cycles) | 232.9 | 74.94 | 191.7 |
+| Runtime | 4m 26s | 9m 49s | 5m 8s |
+
+**Additional observations**
+
+- All three traces recorded zero ITLB misses and zero ITLB merged misses.
+- Consequently, all three have 0% instruction share of STLB accesses, using the project's instruction-share formula.
+- The traces exhibit substantial STLB miss activity, particularly Kron and Twitter.
+- Road has fewer STLB misses and a shorter average STLB miss latency than the other two traces.
+
+**Conclusion**
+
+The GAP traces are successfully processed by ChampSim and provide additional workloads with substantial STLB activity. They may be useful for evaluating data-side TLB prefetching and translation behavior. However, their zero instruction share makes them less suitable for evaluating the instruction-aware benefits of iTP.
+
+These traces supplement the original DPC-3 screening results rather than replacing the previously selected SPEC traces. Further experiments are needed to evaluate their behavior under ATP/SBFP and iTP configurations.
 
 ## Repository Structure
 

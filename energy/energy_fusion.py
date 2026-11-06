@@ -1,10 +1,25 @@
 #!/usr/bin/env python3
 """Combine ChampSim counters with available CACTI per-access values.
 
-This reports energy for the modeled components with sufficient inputs. It does not
-call a partial sum total translation energy: DTLB, ITLB, prefetch structures, or
-DRAM may be missing. The optional DRAM input is an explicit per-walk estimate,
-not a measured DRAM-reference count.
+Usage:
+    python3 energy/energy_fusion.py results/raw/*.txt --out results/results_table.csv
+
+Optional inputs:
+    --cacti-csv energy/cacti_per_access.csv
+    --cpu-ghz 4.0
+    --dram-nj-per-walk <nJ>  # explicit per-walk estimate, not a measured DRAM count
+
+The script reports only components with sufficient inputs. It leaves total energy,
+energy ratios, and EDP blank until the complete model is implemented and populated.
+
+Known limitations:
+- The prototype PTW counters may print one line per core; all matching lines are
+  summed. If no PTW line is present, STLB misses are used as a labeled proxy.
+- ChampSim's current STLB TOTAL ACCESS counter does not split lookups from fills or
+  reads from writes. Current STLB energy treats those accesses as read-like and
+  assumes zero writes, so STLB fill/write energy is not included.
+- A per-walk DRAM value is an approximation unless a direct DRAM-reference counter
+  is available.
 """
 import argparse
 import csv
@@ -22,8 +37,8 @@ COLUMNS = [
     "ptw_prefetch_walks", "psc_lookups", "psc_hits",
     "stlb_energy_nj", "psc_energy_nj", "known_onchip_energy_nj",
     "dram_energy_nj", "known_components", "energy_coverage",
-    # Preserve the existing result-table fields. They stay blank until the full
-    # modeled structure set and DRAM accounting are implemented and populated.
+    # Keep the existing result-table columns. They remain blank until the full
+    # energy model and all required inputs are available.
     "energy_nj", "energy_vs_lru", "edp",
 ]
 
@@ -46,12 +61,18 @@ def parse_run(path: Path) -> dict:
 
     instructions, cycles = int(ipc_match.group(2)), int(ipc_match.group(3))
     accesses, _, misses = map(int, stlb_match.groups())
-    ptw_match = PTW_RE.search(text)
+    ptw_matches = [
+        tuple(map(int, match.groups()))
+        for match in PTW_RE.finditer(text)
+    ]
     config, trace = path.stem.split("__", 1)
 
-    if ptw_match:
-        walks, prefetch_walks, psc_lookups, psc_hits = map(int, ptw_match.groups())
-        walk_source = "PTW prototype counter"
+    if ptw_matches:
+        walks, prefetch_walks, psc_lookups, psc_hits = (
+            sum(row[index] for row in ptw_matches)
+            for index in range(4)
+        )
+        walk_source = "PTW prototype counters (summed)"
     else:
         # A useful baseline proxy, but not an independently measured PTW count.
         walks, prefetch_walks, psc_lookups, psc_hits = misses, None, None, None
@@ -123,12 +144,13 @@ def main() -> None:
 
     cacti = load_cacti(args.cacti_csv)
     runs = [parse_run(path) for path in args.runs]
-    baseline = {r["trace"]: r for r in runs if r["config"] == BASELINE}
+    baseline = {run["trace"]: run for run in runs if run["config"] == BASELINE}
 
     for run in runs:
         runtime_s = run["cycles"] / (args.cpu_ghz * 1e9)
-        # ChampSim's current TOTAL ACCESS counter does not split reads/writes.
-        # Until a write/insert counter exists, it is treated as read-like accesses.
+
+        # Known limitation: TOTAL ACCESS does not separate STLB reads/lookups
+        # from fills/writes. Until that counter exists, writes are assumed to be 0.
         run["stlb_energy_nj"] = component_energy_nj(
             "STLB", run["stlb_accesses"], 0, runtime_s, cacti
         )
@@ -140,7 +162,7 @@ def main() -> None:
             else None
         )
 
-        known = [run[k] for k in ("stlb_energy_nj", "psc_energy_nj") if run[k] is not None]
+        known = [run[key] for key in ("stlb_energy_nj", "psc_energy_nj") if run[key] is not None]
         run["known_onchip_energy_nj"] = sum(known) if known else None
         run["known_components"] = ",".join(
             name for name, value in (
@@ -158,8 +180,8 @@ def main() -> None:
         run["speedup_vs_lru"] = run["ipc"] / base["ipc"] if base and base["ipc"] else None
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    with args.out.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=COLUMNS)
+    with args.out.open("w", newline="") as output:
+        writer = csv.DictWriter(output, fieldnames=COLUMNS)
         writer.writeheader()
         for run in sorted(runs, key=lambda row: (row["trace"], row["config"])):
             writer.writerow({key: ("" if run.get(key) is None else run.get(key)) for key in COLUMNS})

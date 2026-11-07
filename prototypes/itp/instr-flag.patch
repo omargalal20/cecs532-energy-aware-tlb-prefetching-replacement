@@ -1,0 +1,108 @@
+diff --git a/inc/cache.h b/inc/cache.h
+index 07f98f44..3e7cf644 100644
+--- a/inc/cache.h
++++ b/inc/cache.h
+@@ -72,6 +72,7 @@ class CACHE : public champsim::operable
+     bool skip_fill;
+     bool is_translated;
+     bool translate_issued = false;
++    bool is_instruction = false;
+ 
+     uint8_t asid[2] = {std::numeric_limits<uint8_t>::max(), std::numeric_limits<uint8_t>::max()};
+ 
+@@ -100,6 +101,7 @@ public:
+ 
+     access_type type;
+     bool prefetch_from_this;
++    bool is_instruction = false;
+ 
+     uint8_t asid[2] = {std::numeric_limits<uint8_t>::max(), std::numeric_limits<uint8_t>::max()};
+ 
+@@ -155,6 +157,9 @@ public:
+   channel_type* lower_translate;
+ 
+   uint32_t cpu = 0;
++  // Set by the cache right before it calls the prefetcher/replacement modules: true when the request being handled is an
++  // instruction translation. Modules read it through their bound cache pointer (intern_->current_is_instruction).
++  bool current_is_instruction = false;
+   std::string NAME;
+   uint32_t NUM_SET, NUM_WAY, MSHR_SIZE;
+   std::size_t PQ_SIZE;
+diff --git a/inc/channel.h b/inc/channel.h
+index 087c6428..e68fcc20 100644
+--- a/inc/channel.h
++++ b/inc/channel.h
+@@ -48,6 +48,7 @@ class channel
+   struct request {
+     bool is_translated = true;
+     bool response_requested = true;
++    bool is_instruction = false; // true for translations that originate from an instruction fetch
+ 
+     uint8_t asid[2] = {std::numeric_limits<uint8_t>::max(), std::numeric_limits<uint8_t>::max()};
+     access_type type{access_type::LOAD};
+diff --git a/src/cache.cc b/src/cache.cc
+index 6b5cd82d..c907d26c 100644
+--- a/src/cache.cc
++++ b/src/cache.cc
+@@ -94,13 +94,14 @@ auto CACHE::operator=(CACHE&& other) -> CACHE&
+ 
+ CACHE::tag_lookup_type::tag_lookup_type(const request_type& req, bool local_pref, bool skip)
+     : address(req.address), v_address(req.v_address), data(req.data), ip(req.ip), instr_id(req.instr_id), pf_metadata(req.pf_metadata), cpu(req.cpu),
+-      type(req.type), prefetch_from_this(local_pref), skip_fill(skip), is_translated(req.is_translated), instr_depend_on_me(req.instr_depend_on_me)
++      type(req.type), prefetch_from_this(local_pref), skip_fill(skip), is_translated(req.is_translated), is_instruction(req.is_instruction),
++      instr_depend_on_me(req.instr_depend_on_me)
+ {
+ }
+ 
+ CACHE::fill_type::fill_type(const tag_lookup_type& req, champsim::chrono::clock::time_point _time_enqueued)
+     : address(req.address), v_address(req.v_address), ip(req.ip), instr_id(req.instr_id), cpu(req.cpu), type(req.type),
+-      prefetch_from_this(req.prefetch_from_this), time_enqueued(_time_enqueued), instr_depend_on_me(req.instr_depend_on_me), to_return(req.to_return)
++      prefetch_from_this(req.prefetch_from_this), is_instruction(req.is_instruction), time_enqueued(_time_enqueued), instr_depend_on_me(req.instr_depend_on_me), to_return(req.to_return)
+ {
+ }
+ 
+@@ -170,6 +171,8 @@ bool CACHE::handle_fill(const fill_type& fill)
+ {
+   cpu = fill.cpu;
+ 
++  current_is_instruction = fill.is_instruction;
++
+   // find victim
+   auto [set_begin, set_end] = get_set_span(fill.address);
+   auto way = std::find_if_not(set_begin, set_end, [](auto x) { return x.valid; });
+@@ -260,6 +263,7 @@ bool CACHE::try_hit(const tag_lookup_type& handle_pkt)
+                hit ? "HIT" : "MISS", access_type_names.at(champsim::to_underlying(handle_pkt.type)), current_time.time_since_epoch() / clock_period);
+   }
+ 
++  current_is_instruction = handle_pkt.is_instruction;
+   auto metadata_thru = handle_pkt.pf_metadata;
+   if (should_activate_prefetcher(handle_pkt)) {
+     metadata_thru = impl_prefetcher_cache_operate(module_address(handle_pkt), handle_pkt.ip, hit, useful_prefetch, handle_pkt.type, metadata_thru);
+@@ -309,6 +313,7 @@ auto CACHE::mshr_and_forward_packet(const tag_lookup_type& handle_pkt) -> std::p
+   fwd_pkt.ip = handle_pkt.ip;
+ 
+   fwd_pkt.instr_depend_on_me = handle_pkt.instr_depend_on_me;
++  fwd_pkt.is_instruction = handle_pkt.is_instruction;
+   fwd_pkt.response_requested = (!handle_pkt.prefetch_from_this || !handle_pkt.skip_fill);
+ 
+   return std::pair{std::move(to_allocate), std::move(fwd_pkt)};
+@@ -672,6 +677,7 @@ void CACHE::issue_translation(tag_lookup_type& q_entry) const
+     fwd_pkt.ip = q_entry.ip;
+ 
+     fwd_pkt.instr_depend_on_me = q_entry.instr_depend_on_me;
++    fwd_pkt.is_instruction = q_entry.is_instruction;
+     fwd_pkt.is_translated = true;
+ 
+     q_entry.translate_issued = lower_translate->add_rq(fwd_pkt);
+diff --git a/src/ooo_cpu.cc b/src/ooo_cpu.cc
+index 1ac04ff5..8a0e5c42 100644
+--- a/src/ooo_cpu.cc
++++ b/src/ooo_cpu.cc
+@@ -253,6 +253,7 @@ bool O3_CPU::do_fetch_instruction(std::deque<ooo_model_instr>::iterator begin, s
+   fetch_packet.v_address = begin->ip;
+   fetch_packet.instr_id = begin->instr_id;
+   fetch_packet.ip = begin->ip;
++  fetch_packet.is_instruction = true;
+ 
+   std::transform(begin, end, std::back_inserter(fetch_packet.instr_depend_on_me), [](const auto& instr) { return instr.instr_id; });
+ 

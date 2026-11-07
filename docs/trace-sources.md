@@ -45,4 +45,4 @@ For any new trace:
 |---|---|---|---|---|
 | DPC-3 SPEC (Stony Brook) | <https://dpc3.compas.cs.stonybrook.edu/champsim-traces/speccpu/> | Omar | 14 traces | 3 selected (README) |
 | Qualcomm server (Zenodo) | <https://zenodo.org/records/14045186> | | | |
-| GAP and XSBench (Zenodo) | <https://zenodo.org/records/20043527> | | | |
+| GAP and XSBench (Zenodo) | <https://zenodo.org/records/20043527> | Johnny | 3 traces | 3 selected (README) |

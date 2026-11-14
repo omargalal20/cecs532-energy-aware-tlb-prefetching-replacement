@@ -1,0 +1,20 @@
+{
+  "executable_name": "champsim_atp_sbfp_pq_itp",
+  "block_size": 64,
+  "page_size": 4096,
+  "heartbeat_frequency": 10000000,
+  "num_cores": 1,
+
+  "STLB": {
+    "sets": 128,
+    "ways": 12,
+    "pq_size": 32,
+    "replacement": "itp",
+    "prefetcher": "atp_sbfp_pq",
+    "prefetch_as_load": true
+  },
+
+  "LLC": {
+    "replacement": "lru"
+  }
+}

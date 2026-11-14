@@ -1,8 +1,24 @@
 diff --git a/inc/ptw.h b/inc/ptw.h
-index cea252d3..15c6d7eb 100644
+index cea252d3..d226c294 100644
 --- a/inc/ptw.h
 +++ b/inc/ptw.h
-@@ -94,6 +94,10 @@ public:
+@@ -18,6 +18,7 @@
+ #define PTW_H
+ 
+ #include <array>
++#include <cstdint>
+ #include <deque>
+ #include <limits>   // for numeric_limits
+ #include <optional> // for optional
+@@ -27,6 +28,7 @@
+ #include "bandwidth.h"
+ #include "channel.h"
+ #include "operable.h"
++#include "sbfp_hooks.h"
+ #include "ptw_builder.h"
+ #include "util/lru_table.h"
+ #include "waitable.h"
+@@ -94,6 +96,27 @@ public:
    explicit PageTableWalker(champsim::ptw_builder builder);
    ~PageTableWalker();
    // PROTOTYPE counters (not yet wired into the stats framework)
@@ -10,9 +26,49 @@ index cea252d3..15c6d7eb 100644
 +  static constexpr uint32_t FREE_PREFETCH_FLAG = 1u << 31;
 +  void complete_free_prefetch(const request_type& pkt, channel_type* ul);
 +  uint64_t proto_free_walks = 0;
++
++  // SBFP prefetch queue (PQ): 64-entry fully associative buffer of translations in front of the page walker (ISCA'21 Sec. IV).
++  // An STLB demand miss looks here before walking; a hit completes without a walk.
++  struct pq_entry {
++    int64_t vpn;
++    champsim::page_number ppage;
++    int dist_idx;
++  };
++  static constexpr std::size_t PQ_SIZE = 64;
++  std::deque<pq_entry> sbfp_pq;
++  uint64_t proto_pq_lookups = 0, proto_pq_hits = 0, proto_pq_inserts = 0;
++  void complete_from_pq(const request_type& pkt, channel_type* ul, champsim::page_number ppage);
++
++public:
++  bool pq_contains(int64_t vpn) const;
++  bool pq_insert(int64_t vpn, int dist_idx); // false if already present or the page has no translation
++private:
    uint64_t proto_walks = 0, proto_prefetch_walks = 0, proto_psc_hits = 0, proto_psc_lookups = 0;
  
    long operate() final;
+diff --git a/inc/sbfp_hooks.h b/inc/sbfp_hooks.h
+new file mode 100644
+index 00000000..bbd61843
+--- /dev/null
++++ b/inc/sbfp_hooks.h
+@@ -0,0 +1,17 @@
++#ifndef SBFP_HOOKS_H
++#define SBFP_HOOKS_H
++
++#include <cstdint>
++#include <functional>
++
++// Glue between the SBFP prefetcher module and the page-table walker (the walker owns the 64-entry prefetch queue).
++// Modules cannot include ptw.h, so the walker fills in the first two functions and the module fills in the last two.
++// One STLB and one walker are assumed.
++struct sbfp_hooks {
++  static inline std::function<bool(int64_t, int)> pq_insert;  // (virtual page, free-distance index) -> inserted; set by the walker
++  static inline std::function<bool(int64_t)> pq_contains;     // set by the walker
++  static inline std::function<void(int64_t)> walk_done;       // called by the walker when a page walk finishes; set by the module
++  static inline std::function<void(int)> pq_hit;              // called by the walker on a PQ hit; set by the module
++};
++
++#endif
 diff --git a/inc/vmem.h b/inc/vmem.h
 index f2b461bf..1ed4d2d7 100644
 --- a/inc/vmem.h
@@ -32,15 +88,46 @@ index f2b461bf..1ed4d2d7 100644
     * Find the address for the page table page for the given virtual address (under translation), and the given level.
     * If a page table page does not already exist, one will be created and the minor fault penalty will be applied.
 diff --git a/src/ptw.cc b/src/ptw.cc
-index 8c89c941..0a6d4488 100644
+index 8c89c941..8cee5377 100644
 --- a/src/ptw.cc
 +++ b/src/ptw.cc
-@@ -55,7 +55,22 @@ PageTableWalker::mshr_type::mshr_type(const request_type& req, std::size_t level
+@@ -55,7 +55,53 @@ PageTableWalker::mshr_type::mshr_type(const request_type& req, std::size_t level
  
  PageTableWalker::~PageTableWalker()
  {
 -  fmt::print("[PROTO-PTW] {} walks={} prefetch_walks={} psc_lookups={} psc_hits={}\n", NAME, proto_walks, proto_prefetch_walks, proto_psc_lookups, proto_psc_hits);
-+  fmt::print("[PROTO-PTW] {} walks={} prefetch_walks={} psc_lookups={} psc_hits={} free_prefetches={}\n", NAME, proto_walks, proto_prefetch_walks, proto_psc_lookups, proto_psc_hits, proto_free_walks);
++  fmt::print("[PROTO-PTW] {} walks={} prefetch_walks={} psc_lookups={} psc_hits={} free_prefetches={} pq_lookups={} pq_hits={} pq_inserts={}\n", NAME, proto_walks, proto_prefetch_walks, proto_psc_lookups, proto_psc_hits, proto_free_walks, proto_pq_lookups, proto_pq_hits, proto_pq_inserts);
++}
++
++bool PageTableWalker::pq_contains(int64_t vpn) const
++{
++  return std::any_of(std::begin(sbfp_pq), std::end(sbfp_pq), [vpn](const auto& e) { return e.vpn == vpn; });
++}
++
++bool PageTableWalker::pq_insert(int64_t vpn, int dist_idx)
++{
++  if (pq_contains(vpn))
++    return false;
++  const champsim::page_number vpage{champsim::address{static_cast<uint64_t>(vpn) << LOG2_PAGE_SIZE}};
++  if (!vmem->is_mapped(0, vpage))
++    return false;
++  auto [ppage, penalty] = vmem->va_to_pa(0, vpage); // already mapped: no allocation, no fault
++  (void)penalty;
++  if (std::size(sbfp_pq) == PQ_SIZE)
++    sbfp_pq.pop_front(); // FIFO (replacement policy not stated in the paper)
++  sbfp_pq.push_back({vpn, ppage, dist_idx});
++  ++proto_pq_inserts;
++  return true;
++}
++
++void PageTableWalker::complete_from_pq(const request_type& pkt, channel_type* ul, champsim::page_number ppage)
++{
++  mshr_type m{pkt, 0};
++  m.v_address = pkt.address;
++  m.data = champsim::waitable{champsim::address{ppage}, current_time + (warmup ? champsim::chrono::clock::duration{} : HIT_LATENCY)};
++  if (pkt.response_requested)
++    m.to_return = {&ul->returned};
++  completed.push_back(m);
 +}
 +
 +void PageTableWalker::complete_free_prefetch(const request_type& pkt, channel_type* ul)
@@ -59,10 +146,35 @@ index 8c89c941..0a6d4488 100644
  }
  
  auto PageTableWalker::handle_read(const request_type& handle_pkt, channel_type* ul) -> std::optional<mshr_type>
-@@ -165,6 +180,10 @@ long PageTableWalker::operate()
+@@ -130,6 +176,10 @@ auto PageTableWalker::step_translation(const mshr_type& source) -> std::optional
+ 
+ long PageTableWalker::operate()
+ {
++  if (!sbfp_hooks::pq_insert) {
++    sbfp_hooks::pq_insert = [this](int64_t vpn, int idx) { return this->pq_insert(vpn, idx); };
++    sbfp_hooks::pq_contains = [this](int64_t vpn) { return this->pq_contains(vpn); };
++  }
+   long progress{0};
+ 
+   auto is_ready = [time = current_time](const auto& pkt) {
+@@ -165,6 +215,24 @@ long PageTableWalker::operate()
    champsim::bandwidth tag_bw{MAX_READ};
    for (auto* ul : upper_levels) {
      auto [rq_begin, rq_end] = champsim::get_span_p(std::cbegin(ul->RQ), std::cend(ul->RQ), tag_bw, [&next_steps, ul, this](const auto& pkt) {
++      if (pkt.type != access_type::PREFETCH && !std::empty(sbfp_pq)) {
++        ++proto_pq_lookups;
++        const auto vpn = static_cast<int64_t>(champsim::page_number{pkt.address}.to<uint64_t>());
++        auto hit = std::find_if(std::begin(sbfp_pq), std::end(sbfp_pq), [vpn](const auto& e) { return e.vpn == vpn; });
++        if (hit != std::end(sbfp_pq)) {
++          ++proto_pq_hits;
++          const auto entry = *hit;
++          sbfp_pq.erase(hit); // entry moves into the STLB (removal on hit is an assumption)
++          if (sbfp_hooks::pq_hit)
++            sbfp_hooks::pq_hit(entry.dist_idx);
++          this->complete_from_pq(pkt, ul, entry.ppage);
++          return true;
++        }
++      }
 +      if (pkt.type == access_type::PREFETCH && (pkt.pf_metadata & FREE_PREFETCH_FLAG)) {
 +        this->complete_free_prefetch(pkt, ul);
 +        return true;
@@ -70,12 +182,21 @@ index 8c89c941..0a6d4488 100644
        auto result = this->handle_read(pkt, ul);
        if (result.has_value()) {
          next_steps.emplace_back(*result);
-@@ -234,7 +253,7 @@ void PageTableWalker::finish_packet(const response_type& packet)
+@@ -204,6 +272,8 @@ void PageTableWalker::finish_packet(const response_type& packet)
+   };
+ 
+   auto finish_last_step = [this](auto mshr_entry) {
++    if (sbfp_hooks::walk_done)
++      sbfp_hooks::walk_done(static_cast<int64_t>(champsim::page_number{mshr_entry.v_address}.to<uint64_t>()));
+     auto [ppage, penalty] = this->vmem->va_to_pa(mshr_entry.cpu, champsim::page_number{mshr_entry.v_address});
+ 
+     if constexpr (champsim::debug_print) {
+@@ -234,7 +304,7 @@ void PageTableWalker::finish_packet(const response_type& packet)
  void PageTableWalker::begin_phase()
  {
    // Prototype counters report the measured phase only: clear them when a phase (warmup, then ROI) starts.
 -  proto_walks = proto_prefetch_walks = proto_psc_hits = proto_psc_lookups = 0;
-+  proto_walks = proto_prefetch_walks = proto_psc_hits = proto_psc_lookups = proto_free_walks = 0;
++  proto_walks = proto_prefetch_walks = proto_psc_hits = proto_psc_lookups = proto_free_walks = proto_pq_lookups = proto_pq_hits = proto_pq_inserts = 0;
    for (auto* ul : upper_levels) {
      channel_type::stats_type ul_new_roi_stats;
      channel_type::stats_type ul_new_sim_stats;

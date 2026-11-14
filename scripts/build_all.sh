@@ -6,7 +6,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CS="$ROOT/third_party/ChampSim"
-CONFIGS=(${CONFIGS_OVERRIDE:-baseline_lru itp atp atp_itp atp_sbfp atp_sbfp_itp})   # add sbfp configs here once they exist
+CONFIGS=(${CONFIGS_OVERRIDE:-baseline_lru itp atp atp_itp atp_sbfp atp_sbfp_itp atp_sbfp_pq atp_sbfp_pq_itp})   # add sbfp configs here once they exist
 
 [ -d "$CS/.git" ] || { echo "Run scripts/setup.sh first"; exit 1; }
 

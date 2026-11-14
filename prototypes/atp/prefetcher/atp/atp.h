@@ -57,6 +57,7 @@ struct atp : public champsim::modules::prefetcher {
   static constexpr std::size_t FREE_MAP_MAX = 2048;        // bookkeeping bound for in-STLB free prefetches (ours)
   static constexpr int FDT_INIT = 0;                       // (assumed: initial value not stated)
   bool sbfp = false;
+  bool pq_mode = false; // true: free prefetches go to a separate 64-entry PQ in the page walker (paper design); false: they fill the STLB
   std::array<int, FDT_SIZE> fdt{};
   std::deque<std::pair<int64_t, int>> sampler;             // (vpn, free-distance index)
   std::unordered_map<int64_t, int> free_map;               // vpn -> distance index, for free prefetches placed in the STLB
@@ -66,6 +67,7 @@ struct atp : public champsim::modules::prefetcher {
   using prefetcher::prefetcher;
   uint32_t prefetcher_cache_operate(champsim::address addr, champsim::address ip, uint8_t cache_hit, bool useful_prefetch, access_type type,
                                     uint32_t metadata_in);
+  void prefetcher_initialize();
   uint32_t prefetcher_cache_fill(champsim::address addr, long set, long way, uint8_t prefetch, champsim::address evicted_addr, uint32_t metadata_in);
   void prefetcher_final_stats();
 

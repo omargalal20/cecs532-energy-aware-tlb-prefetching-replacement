@@ -4,6 +4,7 @@
 #include <cstdio>
 
 #include "cache.h"
+#include "sbfp_hooks.h"
 #include "vmem.h"
 
 bool atp::fpq_t::hit(int64_t vpn) const { return std::find(q.begin(), q.end(), vpn) != q.end(); }
@@ -94,7 +95,10 @@ void atp::do_free(int64_t page, uint32_t metadata)
     if (q == page || q < 0 || !neighbour_mapped(q))
       continue;
     const int idx = dist_index(q - page);
-    if (fdt[static_cast<std::size_t>(idx)] > FDT_THRESHOLD) {
+    if (fdt[static_cast<std::size_t>(idx)] > FDT_THRESHOLD && pq_mode) {
+      if (sbfp_hooks::pq_insert && sbfp_hooks::pq_insert(q, idx))
+        STAT(++free_issued);
+    } else if (fdt[static_cast<std::size_t>(idx)] > FDT_THRESHOLD) {
       if (prefetch_line(champsim::address{static_cast<uint64_t>(q) << LOG2_PAGE_SIZE}, true, metadata | FREE_PREFETCH_FLAG)) {
         STAT(++free_issued);
         if (free_map.size() >= FREE_MAP_MAX) { free_map.erase(free_order.front()); free_order.pop_front(); }
@@ -131,7 +135,7 @@ uint32_t atp::prefetcher_cache_operate(champsim::address addr, champsim::address
     if (cache_hit) { // hit on a prefetched STLB entry: if it was a free prefetch, reward its free distance
       auto f = free_map.find(vpn);
       if (f != free_map.end()) { fdt_hit(f->second); STAT(++free_useful); free_map.erase(f); }
-    } else { // true miss: look the page up in the Sampler (paper: searched on PQ misses)
+    } else if (!(pq_mode && sbfp_hooks::pq_contains && sbfp_hooks::pq_contains(vpn))) { // true miss that is not a PQ hit: look the page up in the Sampler (paper: searched on PQ misses)
       STAT(++sampler_lookups);
       auto it = std::find_if(sampler.begin(), sampler.end(), [vpn](const auto& e) { return e.first == vpn; });
       if (it != sampler.end()) { fdt_hit(it->second); STAT(++sampler_hits); sampler.erase(it); } // removal on hit: (assumed)
@@ -178,15 +182,15 @@ uint32_t atp::prefetcher_cache_operate(champsim::address addr, champsim::address
         continue;
       if (prefetch_line(champsim::address{static_cast<uint64_t>(p) << LOG2_PAGE_SIZE}, true, metadata_in)) {
         STAT(++issued);
-        if (sbfp)
+        if (sbfp && !pq_mode)
           do_free(p, metadata_in); // SBFP also acts on prefetch page walks (paper Sec. IV-C step 13)
       } else {
         STAT(++dropped);
       }
     }
   }
-  if (sbfp)
-    do_free(vpn, metadata_in); // free neighbours of the demand walk, even when ATP is disabled
+  if (sbfp && !pq_mode)
+    do_free(vpn, metadata_in); // free neighbours of the demand walk, even when ATP is disabled (pq_mode: done when the walk finishes)
 
   // step 4: update every FPQ with the fake prefetches, then the H2P history
   for (std::size_t i = 0; i < 3; ++i)
@@ -200,6 +204,15 @@ uint32_t atp::prefetcher_cache_operate(champsim::address addr, champsim::address
   hA = hB; hB = hE; hE = vpn;
   hist = std::min(hist + 1, 3);
   return metadata_in;
+}
+
+void atp::prefetcher_initialize()
+{
+  if (!pq_mode)
+    return;
+  // In PQ mode SBFP acts when a page walk finishes (free neighbours go into the walker's PQ) and learns from PQ hits.
+  sbfp_hooks::walk_done = [this](int64_t vpn) { do_free(vpn, 0); };
+  sbfp_hooks::pq_hit = [this](int idx) { fdt_hit(idx); STAT(++free_useful); };
 }
 
 uint32_t atp::prefetcher_cache_fill(champsim::address, long, long, uint8_t, champsim::address, uint32_t metadata_in) { return metadata_in; }

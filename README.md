@@ -34,10 +34,10 @@ Both can reduce page walks, but speculative prefetches consume energy and affect
 |---|---|---|---|
 | `baseline_lru` | none | LRU | Required |
 | `itp` | none | iTP | Required |
-| `atp_sbfp` | ATP + SBFP | LRU | Required |
-| `atp` | ATP only (no SBFP) | LRU | Diagnostic: isolates SBFP's contribution |
-| `atp_sbfp_itp` | ATP + SBFP | iTP | Required, if integration is feasible |
-| `atp_itp` | ATP | iTP | Diagnostic |
+| `atp_sbfp_pq` | ATP + SBFP (free PTEs go to a separate 64-entry prefetch queue, as in the paper) | LRU | Required |
+| `atp_sbfp_pq_itp` | ATP + SBFP with prefetch queue | iTP | Required, if integration is feasible |
+| `atp` , `atp_itp` | ATP only (no SBFP) | LRU / iTP | Diagnostic: isolates SBFP's contribution |
+| `atp_sbfp` , `atp_sbfp_itp` | ATP + SBFP, free PTEs fill the STLB directly (no prefetch queue) | LRU / iTP | Ablation: shows the cost of STLB pollution |
 | STLB-capacity and page-size sensitivity, 4-core runs | — | — | Stretch |
 
 ## Methodology
@@ -168,7 +168,6 @@ These traces supplement the original DPC-3 screening results rather than replaci
 │   └── run_baseline.sh           Run one trace and save raw output
 ├── docs/trace-sources.md         Trace sources, what we verified, how to screen a new trace
 ├── prototypes/                   ChampSim patches and modules: ptw-counters, itp (+instruction flag), atp, sbfp
-├── docs/team-tasks.md            Task guide for finishing the implementation
 ├── energy/
 │   ├── energy_fusion.py          Counters × CACTI energy → energy, speedup, EDP
 │   └── cacti_per_access.csv      Per-access energy and leakage per structure

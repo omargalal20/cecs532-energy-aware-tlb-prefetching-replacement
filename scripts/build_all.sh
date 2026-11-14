@@ -6,7 +6,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CS="$ROOT/third_party/ChampSim"
-CONFIGS=(${CONFIGS_OVERRIDE:-baseline_lru itp atp atp_itp})   # add sbfp configs here once they exist
+CONFIGS=(${CONFIGS_OVERRIDE:-baseline_lru itp atp atp_itp atp_sbfp atp_sbfp_itp})   # add sbfp configs here once they exist
 
 [ -d "$CS/.git" ] || { echo "Run scripts/setup.sh first"; exit 1; }
 
@@ -16,8 +16,9 @@ git -C "$CS" clean -fdq inc src prefetcher replacement
 
 git -C "$CS" apply "$ROOT/prototypes/ptw-counters.patch"
 git -C "$CS" apply "$ROOT/prototypes/itp/instr-flag.patch"
+git -C "$CS" apply "$ROOT/prototypes/sbfp/sbfp-free-walk.patch"
 cp -r "$ROOT/prototypes/itp/replacement/itp" "$CS/replacement/"
-cp -r "$ROOT/prototypes/atp/prefetcher/atp" "$CS/prefetcher/"
+cp -r "$ROOT"/prototypes/atp/prefetcher/* "$CS/prefetcher/"
 
 for c in "${CONFIGS[@]}"; do
   echo "== building $c"

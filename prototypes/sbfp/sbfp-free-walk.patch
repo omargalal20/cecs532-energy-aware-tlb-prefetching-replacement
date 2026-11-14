@@ -1,0 +1,54 @@
+diff --git a/inc/ptw.h b/inc/ptw.h
+index cea252d3..15c6d7eb 100644
+--- a/inc/ptw.h
++++ b/inc/ptw.h
+@@ -94,6 +94,10 @@ public:
+   explicit PageTableWalker(champsim::ptw_builder builder);
+   ~PageTableWalker();
+   // PROTOTYPE counters (not yet wired into the stats framework)
++  // SBFP: requests flagged in pf_metadata are served from the already-fetched PTE cache line, without a walk.
++  static constexpr uint32_t FREE_PREFETCH_FLAG = 1u << 31;
++  void complete_free_prefetch(const request_type& pkt, channel_type* ul);
++  uint64_t proto_free_walks = 0;
+   uint64_t proto_walks = 0, proto_prefetch_walks = 0, proto_psc_hits = 0, proto_psc_lookups = 0;
+ 
+   long operate() final;
+diff --git a/src/ptw.cc b/src/ptw.cc
+index 0362cd67..a2a6faab 100644
+--- a/src/ptw.cc
++++ b/src/ptw.cc
+@@ -55,7 +55,22 @@ PageTableWalker::mshr_type::mshr_type(const request_type& req, std::size_t level
+ 
+ PageTableWalker::~PageTableWalker()
+ {
+-  fmt::print("[PROTO-PTW] {} walks={} prefetch_walks={} psc_lookups={} psc_hits={}\n", NAME, proto_walks, proto_prefetch_walks, proto_psc_lookups, proto_psc_hits);
++  fmt::print("[PROTO-PTW] {} walks={} prefetch_walks={} psc_lookups={} psc_hits={} free_prefetches={}\n", NAME, proto_walks, proto_prefetch_walks, proto_psc_lookups, proto_psc_hits, proto_free_walks);
++}
++
++void PageTableWalker::complete_free_prefetch(const request_type& pkt, channel_type* ul)
++{
++  ++proto_free_walks;
++  // The neighbouring PTE sits in the cache line fetched by the triggering walk, so no memory access is made.
++  // va_to_pa also allocates a physical page if the neighbour was never touched (side effect of the simulator).
++  auto [ppage, penalty] = vmem->va_to_pa(pkt.cpu, champsim::page_number{pkt.address});
++  (void)penalty;
++  mshr_type m{pkt, 0};
++  m.v_address = pkt.address;
++  m.data = champsim::waitable{champsim::address{ppage}, current_time + (warmup ? champsim::chrono::clock::duration{} : HIT_LATENCY)};
++  if (pkt.response_requested)
++    m.to_return = {&ul->returned};
++  completed.push_back(m);
+ }
+ 
+ auto PageTableWalker::handle_read(const request_type& handle_pkt, channel_type* ul) -> std::optional<mshr_type>
+@@ -165,6 +180,10 @@ long PageTableWalker::operate()
+   champsim::bandwidth tag_bw{MAX_READ};
+   for (auto* ul : upper_levels) {
+     auto [rq_begin, rq_end] = champsim::get_span_p(std::cbegin(ul->RQ), std::cend(ul->RQ), tag_bw, [&next_steps, ul, this](const auto& pkt) {
++      if (pkt.type == access_type::PREFETCH && (pkt.pf_metadata & FREE_PREFETCH_FLAG)) {
++        this->complete_free_prefetch(pkt, ul);
++        return true;
++      }
+       auto result = this->handle_read(pkt, ul);
+       if (result.has_value()) {
+         next_steps.emplace_back(*result);

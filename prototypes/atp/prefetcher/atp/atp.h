@@ -13,7 +13,10 @@
 
 // ATP: Agile TLB Prefetcher, Vavouliotis et al., ISCA 2021, Sec. V.
 // Decision tree over three constituent prefetchers: P0 = H2P, P1 = MASP, P2 = STP (paper leaf assignment).
-// Version "2a": no SBFP and no separate prefetch queue. Prefetches fill the STLB directly.
+// Prefetches fill the STLB directly (no separate prefetch queue, a deviation from the paper).
+// With `sbfp` set (module atp_sbfp), SBFP (Sec. IV-B) is added: free neighbour PTEs from the walked PTE cache line are
+// prefetched as "free" requests (flag bit in pf_metadata) that the page-table walker completes without a memory access
+// (see prototypes/sbfp/sbfp-free-walk.patch).
 struct atp : public champsim::modules::prefetcher {
   // ---- parameters from the paper ----
   static constexpr std::size_t FPQ_SIZE = 16;       // 16-entry fully associative, FIFO (Sec. V-B)
@@ -45,6 +48,21 @@ struct atp : public champsim::modules::prefetcher {
   std::array<uint64_t, 3> fpq_hits{}, selected{};
   uint64_t disabled = 0, issued = 0, dropped = 0;
 
+  // ---- SBFP (Sec. IV-B). Values marked (paper) are stated in the paper, (assumed) are not. ----
+  static constexpr uint32_t FREE_PREFETCH_FLAG = 1u << 31; // same value as PageTableWalker::FREE_PREFETCH_FLAG
+  static constexpr int FDT_SIZE = 14;                      // free distances -7..+7 without 0 (paper)
+  static constexpr int FDT_MAX = 1023;                     // 10-bit counters (paper)
+  static constexpr int FDT_THRESHOLD = 100;                // counter > threshold -> prefetch, else Sampler (paper)
+  static constexpr std::size_t SAMPLER_SIZE = 64;          // FIFO (paper)
+  static constexpr std::size_t FREE_MAP_MAX = 2048;        // bookkeeping bound for in-STLB free prefetches (ours)
+  static constexpr int FDT_INIT = 0;                       // (assumed: initial value not stated)
+  bool sbfp = false;
+  std::array<int, FDT_SIZE> fdt{};
+  std::deque<std::pair<int64_t, int>> sampler;             // (vpn, free-distance index)
+  std::unordered_map<int64_t, int> free_map;               // vpn -> distance index, for free prefetches placed in the STLB
+  std::deque<int64_t> free_order;
+  uint64_t free_issued = 0, free_dropped = 0, free_useful = 0, sampler_inserts = 0, sampler_lookups = 0, sampler_hits = 0, fdt_updates = 0, decays = 0;
+
   using prefetcher::prefetcher;
   uint32_t prefetcher_cache_operate(champsim::address addr, champsim::address ip, uint8_t cache_hit, bool useful_prefetch, access_type type,
                                     uint32_t metadata_in);
@@ -52,6 +70,9 @@ struct atp : public champsim::modules::prefetcher {
   void prefetcher_final_stats();
 
 private:
+  void do_free(int64_t page, uint32_t metadata);
+  std::vector<int64_t> free_selected(int64_t page) const;
+  void fdt_hit(int idx);
   std::vector<int64_t> cand_h2p() const;
   std::vector<int64_t> cand_stp(int64_t vpn) const;
   std::vector<int64_t> cand_masp(int64_t vpn, uint64_t pc);

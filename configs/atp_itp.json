@@ -8,7 +8,7 @@
   "STLB": {
     "sets": 128,
     "ways": 12,
-    "pq_size": 16,
+    "pq_size": 32,
     "replacement": "itp",
     "prefetcher": "atp",
     "prefetch_as_load": true

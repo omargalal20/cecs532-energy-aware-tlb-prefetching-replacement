@@ -47,6 +47,60 @@ std::vector<int64_t> atp::cand_masp(int64_t vpn, uint64_t pc)
   return out;
 }
 
+namespace
+{
+int dist_index(int64_t d) { return d < 0 ? static_cast<int>(d + 7) : static_cast<int>(d + 6); } // -7..-1 -> 0..6, +1..+7 -> 7..13
+}
+
+void atp::fdt_hit(int idx)
+{
+  ++fdt_updates;
+  if (++fdt[static_cast<std::size_t>(idx)] >= FDT_MAX) { // decay: shift all counters right when one saturates (paper)
+    for (auto& c : fdt)
+      c >>= 1;
+    ++decays;
+  }
+}
+
+// Free neighbours (same PTE cache line = same aligned group of 8 pages) whose FDT counter exceeds the threshold.
+std::vector<int64_t> atp::free_selected(int64_t page) const
+{
+  std::vector<int64_t> out;
+  const int64_t base = page & ~int64_t{7};
+  for (int64_t q = base; q < base + 8; ++q)
+    if (q != page && q >= 0 && fdt[static_cast<std::size_t>(dist_index(q - page))] > FDT_THRESHOLD)
+      out.push_back(q);
+  return out;
+}
+
+void atp::do_free(int64_t page, uint32_t metadata)
+{
+  const int64_t base = page & ~int64_t{7};
+  for (int64_t q = base; q < base + 8; ++q) {
+    if (q == page || q < 0)
+      continue;
+    const int idx = dist_index(q - page);
+    if (fdt[static_cast<std::size_t>(idx)] > FDT_THRESHOLD) {
+      if (prefetch_line(champsim::address{static_cast<uint64_t>(q) << LOG2_PAGE_SIZE}, true, metadata | FREE_PREFETCH_FLAG)) {
+        ++free_issued;
+        if (free_map.size() >= FREE_MAP_MAX) { free_map.erase(free_order.front()); free_order.pop_front(); }
+        free_map[q] = idx;
+        free_order.push_back(q);
+      } else {
+        ++free_dropped;
+      }
+    } else {
+      auto same = [q](const auto& e) { return e.first == q; };
+      if (std::find_if(sampler.begin(), sampler.end(), same) == sampler.end()) {
+        if (sampler.size() == SAMPLER_SIZE)
+          sampler.pop_front(); // FIFO
+        sampler.emplace_back(q, idx);
+        ++sampler_inserts;
+      }
+    }
+  }
+}
+
 uint32_t atp::prefetcher_cache_operate(champsim::address addr, champsim::address ip, uint8_t cache_hit, bool useful_prefetch, access_type, uint32_t metadata_in)
 {
   ++calls;
@@ -59,6 +113,16 @@ uint32_t atp::prefetcher_cache_operate(champsim::address addr, champsim::address
     ++useful_pf_hits;
 
   const int64_t vpn = static_cast<int64_t>(champsim::page_number{addr}.to<uint64_t>());
+  if (sbfp) {
+    if (cache_hit) { // hit on a prefetched STLB entry: if it was a free prefetch, reward its free distance
+      auto f = free_map.find(vpn);
+      if (f != free_map.end()) { fdt_hit(f->second); ++free_useful; free_map.erase(f); }
+    } else { // true miss: look the page up in the Sampler (paper: searched on PQ misses)
+      ++sampler_lookups;
+      auto it = std::find_if(sampler.begin(), sampler.end(), [vpn](const auto& e) { return e.first == vpn; });
+      if (it != sampler.end()) { fdt_hit(it->second); ++sampler_hits; sampler.erase(it); } // removal on hit: (assumed)
+    }
+  }
   const uint64_t pc = ip.to<uint64_t>();
 
   // step 1: look the missing page up in all FPQs
@@ -98,18 +162,27 @@ uint32_t atp::prefetcher_cache_operate(champsim::address addr, champsim::address
     for (auto p : cand[static_cast<std::size_t>(sel)]) {
       if (p < 0)
         continue;
-      if (prefetch_line(champsim::address{static_cast<uint64_t>(p) << LOG2_PAGE_SIZE}, true, metadata_in))
+      if (prefetch_line(champsim::address{static_cast<uint64_t>(p) << LOG2_PAGE_SIZE}, true, metadata_in)) {
         ++issued;
-      else
+        if (sbfp)
+          do_free(p, metadata_in); // SBFP also acts on prefetch page walks (paper Sec. IV-C step 13)
+      } else {
         ++dropped;
+      }
     }
   }
+  if (sbfp)
+    do_free(vpn, metadata_in); // free neighbours of the demand walk, even when ATP is disabled
 
   // step 4: update every FPQ with the fake prefetches, then the H2P history
   for (std::size_t i = 0; i < 3; ++i)
     for (auto p : cand[i])
-      if (p >= 0)
+      if (p >= 0) {
         fpq[i].push(p);
+        if (sbfp) // fake prefetch walks also contribute the free prefetches SBFP would select (paper Sec. V-A)
+          for (auto q : free_selected(p))
+            fpq[i].push(q);
+      }
   hA = hB; hB = hE; hE = vpn;
   hist = std::min(hist + 1, 3);
   return metadata_in;
@@ -123,4 +196,12 @@ void atp::prefetcher_final_stats()
               trigger_misses, useful_pf_hits, fpq_any_hit, fpq_hits[0], fpq_hits[1], fpq_hits[2]);
   std::printf("[ATP] selected[H2P,MASP,STP]=%lu,%lu,%lu disabled=%lu issued=%lu dropped_pq_full=%lu counters(c0,c1,c2)=%d,%d,%d\n", selected[0], selected[1],
               selected[2], disabled, issued, dropped, c0, c1, c2);
+  if (sbfp) {
+    std::printf("[SBFP] free_issued=%lu free_dropped_pq_full=%lu free_useful=%lu sampler_inserts=%lu sampler_lookups=%lu sampler_hits=%lu fdt_updates=%lu decays=%lu\n",
+                free_issued, free_dropped, free_useful, sampler_inserts, sampler_lookups, sampler_hits, fdt_updates, decays);
+    std::printf("[SBFP] fdt[-7..-1,+1..+7]=");
+    for (auto c : fdt)
+      std::printf("%d ", c);
+    std::printf("\n");
+  }
 }

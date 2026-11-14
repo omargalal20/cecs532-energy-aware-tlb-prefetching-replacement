@@ -7,7 +7,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WARMUP="${1:-10}"; SIM="${2:-20}"; shift $(( $# > 2 ? 2 : $# ))
-CONFIGS=("${@:-baseline_lru itp atp atp_itp}")
+CONFIGS=("${@:-baseline_lru itp atp atp_itp atp_sbfp atp_sbfp_itp}")
 read -ra CONFIGS <<< "${CONFIGS[*]}"
 JOBS="${JOBS:-2}"
 TRACES_DEFAULT="429.mcf-51B 620.omnetpp_s-874B 623.xalancbmk_s-700B"

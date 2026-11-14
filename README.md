@@ -35,7 +35,9 @@ Both can reduce page walks, but speculative prefetches consume energy and affect
 | `baseline_lru` | none | LRU | Required |
 | `itp` | none | iTP | Required |
 | `atp_sbfp` | ATP + SBFP | LRU | Required |
+| `atp` | ATP only (no SBFP) | LRU | Diagnostic: isolates SBFP's contribution |
 | `atp_sbfp_itp` | ATP + SBFP | iTP | Required, if integration is feasible |
+| `atp_itp` | ATP | iTP | Diagnostic |
 | STLB-capacity and page-size sensitivity, 4-core runs | — | — | Stretch |
 
 ## Methodology
@@ -156,13 +158,17 @@ These traces supplement the original DPC-3 screening results rather than replaci
 
 ```
 .
-├── configs/baseline_lru.json     ChampSim configuration of the LRU baseline
+├── configs/*.json                ChampSim configuration per policy (baseline_lru, itp, atp, atp_sbfp, ...), CACTI .cfg files
 ├── scripts/
 │   ├── setup.sh                  Clone pinned ChampSim, install libraries, build
 │   ├── fetch_traces.sh           Download the selected traces into traces/
+│   ├── build_all.sh              Apply our patches and modules, build one binary per config
+│   ├── run_all.sh                Run configs x traces into results/raw/
+│   ├── plot_results.py           Plots from results_table.csv
 │   └── run_baseline.sh           Run one trace and save raw output
 ├── docs/trace-sources.md         Trace sources, what we verified, how to screen a new trace
-├── prototypes/ptw-counters.patch ChampSim page-table-walker counters (prototype)
+├── prototypes/                   ChampSim patches and modules: ptw-counters, itp (+instruction flag), atp, sbfp
+├── docs/team-tasks.md            Task guide for finishing the implementation
 ├── energy/
 │   ├── energy_fusion.py          Counters × CACTI energy → energy, speedup, EDP
 │   └── cacti_per_access.csv      Per-access energy and leakage per structure
@@ -239,9 +245,9 @@ Populated as runs complete. Each trace is tagged with a workload type so results
 |---|---|
 | Proposal | Complete |
 | Repository, build, baseline run and trace screening | Complete (14 traces screened, 3 selected) |
-| ATP/SBFP and iTP integration, counters | Not started |
+| ATP/SBFP and iTP implementation, counters | Implemented, smoke-tested on a synthetic trace; real-trace runs in progress |
 | CACTI models of TLB, PQ and SBFP structures | In progress |
-| Full experiment set and energy fusion | Not started |
+| Full experiment set and energy fusion | In progress |
 | Final report | Not started |
 
 ## Limitations

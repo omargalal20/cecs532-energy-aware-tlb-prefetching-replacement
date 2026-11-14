@@ -219,24 +219,54 @@ Raw output is saved to `results/raw/baseline_lru__<trace>.txt`.
 | `cpu0->cpu0_STLB PREFETCH REQUESTED / ISSUED / USEFUL / USELESS` | Prefetch accuracy (zero for the baseline) |
 | `cpu0->cpu0_PTW …` | Page-table-walker activity |
 
-### 6. Compute energy, speedup and EDP
+### 6. Run all configurations
+
+```bash
+scripts/build_all.sh                    # apply patches, build one binary per configuration
+scripts/run_all.sh 10 20                # all 8 configurations x 3 traces, 10M warmup + 20M simulated
+JOBS=12 scripts/run_all.sh 20 100 baseline_lru itp atp_sbfp_pq atp_sbfp_pq_itp   # required four, longer window
+TRACES="<trace> <trace>" scripts/run_all.sh 10 20 baseline_lru itp   # other traces or a subset of configurations
+```
+
+`run_all.sh` takes `[warmup_M] [sim_M] [config ...]`, runs `JOBS` simulations in parallel (default 2, each about 190 MB of memory) and writes `results/raw/<config>__<trace>.txt`. Finished files are skipped, so an interrupted run can be restarted. Do not rename `results/raw/` while it runs.
+
+### 7. Compute energy, speedup and EDP
 
 ```bash
 python3 energy/energy_fusion.py results/raw/*.txt --out results/results_table.csv
+python3 scripts/plot_results.py
 ```
 
 Energy columns stay empty until `energy/cacti_per_access.csv` contains CACTI values.
 
 ## Results
 
-Populated as runs complete. Each trace is tagged with a workload type so results can be read per scenario (objective 3).
+Measured on single-core ChampSim, 20M warmup + 100M simulated instructions, for the four required configurations. Raw outputs: `results/raw_20_100/`. Speedup is cycles of `baseline_lru` divided by cycles of the configuration. Page walks are the walks counted by the page-table walker (for the baseline they equal the STLB misses; with the prefetch queue, STLB misses served from the queue do not start a walk, so walks can be lower than STLB misses). STLB MPKI is taken from the STLB miss counter, which still counts prefetch accesses until the fusion script uses demand-only counters. Energy and EDP are filled in once the CACTI values and the energy-fusion update are merged.
 
-| Trace | Workload type | Config | IPC | Speedup vs LRU | STLB MPKI | Page walks | Energy vs LRU | EDP |
+| Trace | Config | IPC | Speedup vs LRU | STLB MPKI | Page walks | Walks vs LRU | Energy vs LRU | EDP |
 |---|---|---|---|---|---|---|---|---|
-| — | — | `baseline_lru` | — | 1.00 | — | — | 1.00 | — |
-| — | — | `itp` | — | — | — | — | — | — |
-| — | — | `atp_sbfp` | — | — | — | — | — | — |
-| — | — | `atp_sbfp_itp` | — | — | — | — | — | — |
+| `429.mcf-51B` | `baseline_lru` | 0.1460 | 1.0000 | 10.77 | 1,076,833 | — | TBD | TBD |
+| | `itp` | 0.1448 | 0.9923 | 20.79 | 2,078,715 | +93% | TBD | TBD |
+| | `atp_sbfp_pq` | 0.1461 | 1.0008 | 10.77 | 959,014 | −11% | TBD | TBD |
+| | `atp_sbfp_pq_itp` | 0.1450 | 0.9937 | 19.81 | 1,817,148 | +69% | TBD | TBD |
+| `620.omnetpp_s-874B` | `baseline_lru` | 0.4166 | 1.0000 | 4.29 | 429,352 | — | TBD | TBD |
+| | `itp` | 0.4154 | 0.9972 | 5.14 | 513,990 | +20% | TBD | TBD |
+| | `atp_sbfp_pq` | 0.4167 | 1.0003 | 4.29 | 392,281 | −9% | TBD | TBD |
+| | `atp_sbfp_pq_itp` | 0.4158 | 0.9981 | 5.14 | 478,429 | +11% | TBD | TBD |
+| `623.xalancbmk_s-700B` | `baseline_lru` | 0.9183 | 1.0000 | 1.71 | 171,437 | — | TBD | TBD |
+| | `itp` | 0.8993 | 0.9793 | 3.78 | 378,434 | +121% | TBD | TBD |
+| | `atp_sbfp_pq` | 0.9185 | 1.0002 | 1.71 | 163,586 | −5% | TBD | TBD |
+| | `atp_sbfp_pq_itp` | 0.9004 | 0.9804 | 3.69 | 349,054 | +104% | TBD | TBD |
+
+**What the measurements show so far (speed only).**
+- iTP is slower than LRU on all three traces and increases page walks. Its data-translation insertion policy is a poor fit for traces with little instruction share (`429.mcf-51B` has none).
+- ATP with SBFP and a separate prefetch queue is neutral on speed (+0.02% to +0.08%) and removes 5 to 11% of page walks.
+- Combining the two is slightly better than iTP alone on every trace, and still slower than LRU.
+- ATP's throttling counter keeps it disabled except together with iTP on `429.mcf-51B`, where it issues 15,199 prefetch walks.
+- A shorter 10M warmup + 20M run gave the same ranking, except that `623.xalancbmk_s-700B` with iTP looked nearly neutral there (speedup 0.997) and is clearly worse at 100M (0.979). We have not yet explained this.
+- The `atp`, `atp_itp`, `atp_sbfp` and `atp_sbfp_itp` ablations were run at 10M + 20M only. Without the prefetch queue, free prefetches pollute the STLB (`623.xalancbmk_s-700B`: 0.989 speedup, +51% walks).
+
+**Still to come:** energy and EDP per configuration, the Pareto comparison, and GAP workloads. Each trace will be tagged with a workload type for objective 3.
 
 ## Project Status
 
@@ -244,9 +274,9 @@ Populated as runs complete. Each trace is tagged with a workload type so results
 |---|---|
 | Proposal | Complete |
 | Repository, build, baseline run and trace screening | Complete (14 traces screened, 3 selected) |
-| ATP/SBFP and iTP implementation, counters | Implemented, smoke-tested on a synthetic trace; real-trace runs in progress |
+| ATP/SBFP and iTP implementation, counters | Complete; all configurations run on the three selected traces (10M + 20M, and 20M + 100M for the four required configurations) |
 | CACTI models of TLB, PQ and SBFP structures | In progress |
-| Full experiment set and energy fusion | In progress |
+| Full experiment set and energy fusion | Speed results complete; energy columns waiting on CACTI values and the fusion-script update |
 | Final report | Not started |
 
 ## Limitations

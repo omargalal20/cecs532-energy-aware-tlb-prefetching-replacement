@@ -1,0 +1,17 @@
+{
+  "executable_name": "champsim_itp",
+  "block_size": 64,
+  "page_size": 4096,
+  "heartbeat_frequency": 10000000,
+  "num_cores": 1,
+  "STLB": {
+    "sets": 128,
+    "ways": 12,
+    "pq_size": 8,
+    "replacement": "itp",
+    "prefetcher": "no"
+  },
+  "LLC": {
+    "replacement": "lru"
+  }
+}

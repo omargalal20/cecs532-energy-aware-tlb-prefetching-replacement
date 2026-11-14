@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cstdio>
 
+#include "cache.h"
+#include "vmem.h"
+
 bool atp::fpq_t::hit(int64_t vpn) const { return std::find(q.begin(), q.end(), vpn) != q.end(); }
 
 void atp::fpq_t::push(int64_t vpn)
@@ -47,18 +50,29 @@ std::vector<int64_t> atp::cand_masp(int64_t vpn, uint64_t pc)
   return out;
 }
 
+// Statistics are counted in the measured phase only (not during warmup); prefetcher state keeps learning in both.
+#define STAT(stmt) do { if (!intern_->warmup) { stmt; } } while (0)
+
 namespace
 {
 int dist_index(int64_t d) { return d < 0 ? static_cast<int>(d + 7) : static_cast<int>(d + 6); } // -7..-1 -> 0..6, +1..+7 -> 7..13
 }
 
+// A neighbouring PTE is a valid free translation only if its page is already mapped (a real PTE for an unmapped page is invalid).
+// Checking this also avoids the simulator allocating physical pages early, which would change the physical memory layout.
+bool atp::neighbour_mapped(int64_t q) const
+{
+  const auto* vm = VirtualMemory::instance;
+  return vm != nullptr && vm->is_mapped(intern_->cpu, champsim::page_number{champsim::address{static_cast<uint64_t>(q) << LOG2_PAGE_SIZE}});
+}
+
 void atp::fdt_hit(int idx)
 {
-  ++fdt_updates;
+  STAT(++fdt_updates);
   if (++fdt[static_cast<std::size_t>(idx)] >= FDT_MAX) { // decay: shift all counters right when one saturates (paper)
     for (auto& c : fdt)
       c >>= 1;
-    ++decays;
+    STAT(++decays);
   }
 }
 
@@ -68,7 +82,7 @@ std::vector<int64_t> atp::free_selected(int64_t page) const
   std::vector<int64_t> out;
   const int64_t base = page & ~int64_t{7};
   for (int64_t q = base; q < base + 8; ++q)
-    if (q != page && q >= 0 && fdt[static_cast<std::size_t>(dist_index(q - page))] > FDT_THRESHOLD)
+    if (q != page && q >= 0 && fdt[static_cast<std::size_t>(dist_index(q - page))] > FDT_THRESHOLD && neighbour_mapped(q))
       out.push_back(q);
   return out;
 }
@@ -77,17 +91,17 @@ void atp::do_free(int64_t page, uint32_t metadata)
 {
   const int64_t base = page & ~int64_t{7};
   for (int64_t q = base; q < base + 8; ++q) {
-    if (q == page || q < 0)
+    if (q == page || q < 0 || !neighbour_mapped(q))
       continue;
     const int idx = dist_index(q - page);
     if (fdt[static_cast<std::size_t>(idx)] > FDT_THRESHOLD) {
       if (prefetch_line(champsim::address{static_cast<uint64_t>(q) << LOG2_PAGE_SIZE}, true, metadata | FREE_PREFETCH_FLAG)) {
-        ++free_issued;
+        STAT(++free_issued);
         if (free_map.size() >= FREE_MAP_MAX) { free_map.erase(free_order.front()); free_order.pop_front(); }
         free_map[q] = idx;
         free_order.push_back(q);
       } else {
-        ++free_dropped;
+        STAT(++free_dropped);
       }
     } else {
       auto same = [q](const auto& e) { return e.first == q; };
@@ -95,7 +109,7 @@ void atp::do_free(int64_t page, uint32_t metadata)
         if (sampler.size() == SAMPLER_SIZE)
           sampler.pop_front(); // FIFO
         sampler.emplace_back(q, idx);
-        ++sampler_inserts;
+        STAT(++sampler_inserts);
       }
     }
   }
@@ -103,32 +117,32 @@ void atp::do_free(int64_t page, uint32_t metadata)
 
 uint32_t atp::prefetcher_cache_operate(champsim::address addr, champsim::address ip, uint8_t cache_hit, bool useful_prefetch, access_type, uint32_t metadata_in)
 {
-  ++calls;
+  STAT(++calls);
   // In the paper a prefetched translation sits in the PQ, so a demand access that finds it is a TLB miss as far as ATP is concerned.
   // Here prefetches fill the STLB itself, so a hit on a prefetched entry (useful_prefetch) is counted as a miss to keep the same miss stream.
   if (cache_hit && !useful_prefetch)
     return metadata_in;
-  ++trigger_misses;
+  STAT(++trigger_misses);
   if (cache_hit)
-    ++useful_pf_hits;
+    STAT(++useful_pf_hits);
 
   const int64_t vpn = static_cast<int64_t>(champsim::page_number{addr}.to<uint64_t>());
   if (sbfp) {
     if (cache_hit) { // hit on a prefetched STLB entry: if it was a free prefetch, reward its free distance
       auto f = free_map.find(vpn);
-      if (f != free_map.end()) { fdt_hit(f->second); ++free_useful; free_map.erase(f); }
+      if (f != free_map.end()) { fdt_hit(f->second); STAT(++free_useful); free_map.erase(f); }
     } else { // true miss: look the page up in the Sampler (paper: searched on PQ misses)
-      ++sampler_lookups;
+      STAT(++sampler_lookups);
       auto it = std::find_if(sampler.begin(), sampler.end(), [vpn](const auto& e) { return e.first == vpn; });
-      if (it != sampler.end()) { fdt_hit(it->second); ++sampler_hits; sampler.erase(it); } // removal on hit: (assumed)
+      if (it != sampler.end()) { fdt_hit(it->second); STAT(++sampler_hits); sampler.erase(it); } // removal on hit: (assumed)
     }
   }
   const uint64_t pc = ip.to<uint64_t>();
 
   // step 1: look the missing page up in all FPQs
   const bool h0 = fpq[0].hit(vpn), h1 = fpq[1].hit(vpn), h2 = fpq[2].hit(vpn);
-  fpq_hits[0] += h0; fpq_hits[1] += h1; fpq_hits[2] += h2;
-  fpq_any_hit += (h0 || h1 || h2);
+  STAT(fpq_hits[0] += h0; fpq_hits[1] += h1; fpq_hits[2] += h2);
+  STAT(fpq_any_hit += (h0 || h1 || h2));
 
   // step 2: update counters (Fig. 7 table: rows are P0/P1/P2 FPQ hit/miss)
   if (!h0 && !h1 && !h2) {
@@ -156,18 +170,18 @@ uint32_t atp::prefetcher_cache_operate(champsim::address addr, champsim::address
       sel = (c2 >= 2) ? 2 : 1;
   }
   if (sel < 0) {
-    ++disabled;
+    STAT(++disabled);
   } else {
-    ++selected[static_cast<std::size_t>(sel)];
+    STAT(++selected[static_cast<std::size_t>(sel)]);
     for (auto p : cand[static_cast<std::size_t>(sel)]) {
       if (p < 0)
         continue;
       if (prefetch_line(champsim::address{static_cast<uint64_t>(p) << LOG2_PAGE_SIZE}, true, metadata_in)) {
-        ++issued;
+        STAT(++issued);
         if (sbfp)
           do_free(p, metadata_in); // SBFP also acts on prefetch page walks (paper Sec. IV-C step 13)
       } else {
-        ++dropped;
+        STAT(++dropped);
       }
     }
   }

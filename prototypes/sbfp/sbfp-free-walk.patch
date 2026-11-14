@@ -13,8 +13,26 @@ index cea252d3..15c6d7eb 100644
    uint64_t proto_walks = 0, proto_prefetch_walks = 0, proto_psc_hits = 0, proto_psc_lookups = 0;
  
    long operate() final;
+diff --git a/inc/vmem.h b/inc/vmem.h
+index f2b461bf..1ed4d2d7 100644
+--- a/inc/vmem.h
++++ b/inc/vmem.h
+@@ -107,6 +107,13 @@ public:
+    */
+   std::pair<champsim::page_number, champsim::chrono::clock::duration> va_to_pa(uint32_t cpu_num, champsim::page_number vaddr);
+ 
++  /**
++   * Prototype (SBFP): true if the page already has a translation. Never allocates.
++   * A neighbouring PTE can only be a free prefetch if it is valid, i.e. the page is already mapped.
++   */
++  [[nodiscard]] bool is_mapped(uint32_t cpu_num, champsim::page_number vaddr) const { return vpage_to_ppage_map.find({cpu_num, vaddr}) != vpage_to_ppage_map.end(); }
++  static inline const VirtualMemory* instance = nullptr; // single shared instance, set by the constructor (used by prefetcher modules)
++
+   /**
+    * Find the address for the page table page for the given virtual address (under translation), and the given level.
+    * If a page table page does not already exist, one will be created and the minor fault penalty will be applied.
 diff --git a/src/ptw.cc b/src/ptw.cc
-index 0362cd67..a2a6faab 100644
+index 8c89c941..0a6d4488 100644
 --- a/src/ptw.cc
 +++ b/src/ptw.cc
 @@ -55,7 +55,22 @@ PageTableWalker::mshr_type::mshr_type(const request_type& req, std::size_t level
@@ -52,3 +70,32 @@ index 0362cd67..a2a6faab 100644
        auto result = this->handle_read(pkt, ul);
        if (result.has_value()) {
          next_steps.emplace_back(*result);
+@@ -234,7 +253,7 @@ void PageTableWalker::finish_packet(const response_type& packet)
+ void PageTableWalker::begin_phase()
+ {
+   // Prototype counters report the measured phase only: clear them when a phase (warmup, then ROI) starts.
+-  proto_walks = proto_prefetch_walks = proto_psc_hits = proto_psc_lookups = 0;
++  proto_walks = proto_prefetch_walks = proto_psc_hits = proto_psc_lookups = proto_free_walks = 0;
+   for (auto* ul : upper_levels) {
+     channel_type::stats_type ul_new_roi_stats;
+     channel_type::stats_type ul_new_sim_stats;
+diff --git a/src/vmem.cc b/src/vmem.cc
+index 5a7cc937..25f3b783 100644
+--- a/src/vmem.cc
++++ b/src/vmem.cc
+@@ -106,6 +106,7 @@ std::size_t VirtualMemory::available_ppages() const { return (ppage_free_list.si
+ 
+ std::pair<champsim::page_number, champsim::chrono::clock::duration> VirtualMemory::va_to_pa(uint32_t cpu_num, champsim::page_number vaddr)
+ {
++  instance = this;
+   auto [ppage, fault] = vpage_to_ppage_map.try_emplace({cpu_num, champsim::page_number{vaddr}}, ppage_front());
+ 
+   // this vpage doesn't yet have a ppage mapping
+@@ -124,6 +125,7 @@ std::pair<champsim::page_number, champsim::chrono::clock::duration> VirtualMemor
+ 
+ std::pair<champsim::address, champsim::chrono::clock::duration> VirtualMemory::get_pte_pa(uint32_t cpu_num, champsim::page_number vaddr, std::size_t level)
+ {
++  instance = this;
+   champsim::dynamic_extent pte_table_entry_extent{champsim::address::bits, shamt(level + 1)};
+   auto [ppage, fault] =
+       page_table.try_emplace({cpu_num, level, champsim::address_slice{pte_table_entry_extent, vaddr}}, champsim::splice(active_pte_page, next_pte_page));

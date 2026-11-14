@@ -1,23 +1,5 @@
-ChampSim page-table-walker counters (prototype)
-
-Adds four counters to PageTableWalker and prints one line at the end of a run:
-  [PROTO-PTW] <name> walks=N prefetch_walks=N psc_lookups=N psc_hits=N
-ChampSim's own output has no walker statistics; these counts supply the
-per-walk activity needed for the energy model.
-
-Applies to: ChampSim commit 410cee6 (pinned in scripts/setup.sh)
-Apply:      cd third_party/ChampSim && git apply ../../prototypes/ptw-counters.patch
-Build:      ./config.sh <config>.json && make
-Revert:     git checkout -- inc/ptw.h src/ptw.cc
-
-Checked on 429.mcf-51B (0 warmup, 2M instructions, baseline LRU config):
-  walks = STLB misses = 39,337; PSC lookups = 4 per walk; PSC hits = 92.3%.
-Not checked: prefetch_walks (needs an STLB prefetcher). Counters are not reset
-after warmup, so run with --warmup-instructions 0 to compare against STLB stats.
-These counters are not yet part of ChampSim's stats framework.
-
 diff --git a/inc/ptw.h b/inc/ptw.h
-index 736ca8f..cea252d 100644
+index 736ca8f9..cea252d3 100644
 --- a/inc/ptw.h
 +++ b/inc/ptw.h
 @@ -92,6 +92,9 @@ public:
@@ -31,7 +13,7 @@ index 736ca8f..cea252d 100644
    long operate() final;
  
 diff --git a/src/ptw.cc b/src/ptw.cc
-index b555659..0362cd6 100644
+index b5556590..8c89c941 100644
 --- a/src/ptw.cc
 +++ b/src/ptw.cc
 @@ -53,11 +53,20 @@ PageTableWalker::mshr_type::mshr_type(const request_type& req, std::size_t level
@@ -55,3 +37,12 @@ index b555659..0362cd6 100644
    walk_init =
        std::accumulate(std::begin(pscl_hits), std::end(pscl_hits), std::optional<pscl_entry>(walk_init), [](auto x, auto& y) { return y.value_or(*x); }).value();
  
+@@ -224,6 +233,8 @@ void PageTableWalker::finish_packet(const response_type& packet)
+ 
+ void PageTableWalker::begin_phase()
+ {
++  // Prototype counters report the measured phase only: clear them when a phase (warmup, then ROI) starts.
++  proto_walks = proto_prefetch_walks = proto_psc_hits = proto_psc_lookups = 0;
+   for (auto* ul : upper_levels) {
+     channel_type::stats_type ul_new_roi_stats;
+     channel_type::stats_type ul_new_sim_stats;

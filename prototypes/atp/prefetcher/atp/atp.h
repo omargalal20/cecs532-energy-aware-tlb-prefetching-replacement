@@ -70,6 +70,7 @@ struct atp : public champsim::modules::prefetcher {
   void prefetcher_final_stats();
 
 private:
+  bool neighbour_mapped(int64_t q) const;
   void do_free(int64_t page, uint32_t metadata);
   std::vector<int64_t> free_selected(int64_t page) const;
   void fdt_hit(int idx);

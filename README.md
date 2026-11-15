@@ -233,15 +233,15 @@ TRACES="<trace> <trace>" scripts/run_all.sh 10 20 baseline_lru itp   # other tra
 ### 7. Compute energy, speedup and EDP
 
 ```bash
-python3 energy/energy_fusion.py results/raw/*.txt --out results/results_table.csv
+python3 energy/energy_fusion.py results/raw/*.txt --cacti-csv energy/cacti_per_access.csv --dram-nj-per-access REPLACE_WITH_CITED_NJ_PER_ACCESS --out results/results_table.csv
 python3 scripts/plot_results.py
 ```
 
-Energy columns stay empty until `energy/cacti_per_access.csv` contains CACTI values.
+Total energy, energy/baseline, and EDP remain blank until every active structure has a usable per-access value and the cited DRAM energy/read value is supplied. See [docs/energy-accounting.md](docs/energy-accounting.md) for counter mappings, prefetch-accuracy definitions, and current modeling limits.
 
 ## Results
 
-Measured on single-core ChampSim, 20M warmup + 100M simulated instructions, for the four required configurations. Raw outputs: `results/raw_20_100/`. Speedup is cycles of `baseline_lru` divided by cycles of the configuration. Page walks are the walks counted by the page-table walker (for the baseline they equal the STLB misses; with the prefetch queue, STLB misses served from the queue do not start a walk, so walks can be lower than STLB misses). STLB MPKI is taken from the STLB miss counter, which still counts prefetch accesses until the fusion script uses demand-only counters. Energy and EDP are filled in once the CACTI values and the energy-fusion update are merged.
+Measured on single-core ChampSim, 20M warmup + 100M simulated instructions, for the four required configurations. Raw outputs: `results/raw_20_100/`. Speedup is cycles of `baseline_lru` divided by cycles of the configuration. Page walks are the walks counted by the page-table walker (for the baseline they equal the STLB misses; with the prefetch queue, STLB misses served from the queue do not start a walk, so walks can be lower than STLB misses). STLB MPKI uses STLB LOAD misses (demand misses); STLB TOTAL ACCESS remains the activity input for STLB energy because it includes prefetch accesses. Energy and EDP require all active structure-energy inputs and a cited DRAM energy/read value. See [docs/energy-accounting.md](docs/energy-accounting.md) for definitions and current limitations.
 
 | Trace | Config | IPC | Speedup vs LRU | STLB MPKI | Page walks | Walks vs LRU | Energy vs LRU | EDP |
 |---|---|---|---|---|---|---|---|---|

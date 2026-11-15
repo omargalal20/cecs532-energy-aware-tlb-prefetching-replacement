@@ -2,12 +2,6 @@
 """Plot results/results_table.csv (made by energy/energy_fusion.py).
 
 Usage: python3 scripts/plot_results.py [results/results_table.csv] [--out results/plots]
-
-Writes:
-  speedup.png      speedup vs baseline_lru per trace and config
-  stlb_mpki.png    STLB misses per kilo-instruction
-  page_walks.png   page walks (demand + prefetch) relative to baseline_lru
-  pareto.png       speedup vs energy relative to baseline_lru (only if energy columns are filled)
 """
 import argparse
 import csv
@@ -17,6 +11,7 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
 ORDER = ["baseline_lru", "itp", "atp_sbfp_pq", "atp_sbfp_pq_itp", "atp", "atp_itp", "atp_sbfp", "atp_sbfp_itp"]
 
@@ -60,7 +55,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
 
     sp = [num(r["speedup_vs_lru"]) for r in rows if num(r["speedup_vs_lru"]) is not None]
-    lo, hi = min(min(sp), 1.0) - 0.005, max(max(sp), 1.0) + 0.005   # zoom: differences are a few percent
+    lo, hi = min(min(sp), 1.0) - 0.005, max(max(sp), 1.0) + 0.005
     grouped_bars(rows, "speedup_vs_lru", "speedup vs baseline_lru", f"Speedup (y-axis starts at {lo:.3f})", out / "speedup.png", 1.0, ylim=(lo, hi))
     grouped_bars(rows, "stlb_mpki", "STLB MPKI", "STLB misses per kilo-instruction", out / "stlb_mpki.png")
 
@@ -70,22 +65,39 @@ def main():
         r["walks_rel"] = w / b if w is not None and b else ""
     grouped_bars(rows, "walks_rel", "page walks relative to baseline_lru", "Page walks (demand + prefetch)", out / "page_walks.png", 1.0)
 
-    # Pareto view needs total energy; energy_fusion.py leaves it blank until CACTI and DRAM inputs are complete.
     pts = defaultdict(list)
     for r in rows:
         if num(r["energy_vs_lru"]) is not None and num(r["speedup_vs_lru"]) is not None:
             pts[r["config"]].append((num(r["energy_vs_lru"]), num(r["speedup_vs_lru"]), r["trace"]))
     if pts:
-        fig, ax = plt.subplots(figsize=(6, 5))
-        for c, p in pts.items():
-            ax.scatter([x for x, _, _ in p], [y for _, y, _ in p], label=c)
-            for x, y, t in p:
-                ax.annotate(t.split("-")[0], (x, y), fontsize=6)
-        ax.axhline(1, color="gray", lw=0.8, ls="--"); ax.axvline(1, color="gray", lw=0.8, ls="--")
+        fig, ax = plt.subplots(figsize=(10, 5))
+        traces = sorted({trace for points in pts.values() for _, _, trace in points})
+        marker_cycle = ["o", "s", "^", "D", "v", "P", "X", "*"]
+        trace_markers = {trace: marker_cycle[i % len(marker_cycle)] for i, trace in enumerate(traces)}
+        trace_names = {trace: trace.split("-")[0] for trace in traces}
+        colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+        config_handles = []
+        for i, (config, points) in enumerate(pts.items()):
+            color = colors[i % len(colors)]
+            config_handles.append(Line2D([], [], marker="o", linestyle="None", color=color, label=config))
+            for trace, marker in trace_markers.items():
+                matches = [(x, y) for x, y, name in points if name == trace]
+                if matches:
+                    ax.scatter([x for x, _ in matches], [y for _, y in matches], color=color, marker=marker)
+        ax.axhline(1, color="gray", lw=0.8, ls="--")
+        ax.axvline(1, color="gray", lw=0.8, ls="--")
         ax.set_xlabel("estimated translation energy vs baseline_lru (lower is better)")
         ax.set_ylabel("speedup vs baseline_lru (higher is better)")
-        ax.legend(fontsize=8)
-        fig.tight_layout(); fig.savefig(out / "pareto.png", dpi=200); plt.close(fig)
+        trace_handles = [
+            Line2D([], [], marker=marker, linestyle="None", color="black", label=name)
+            for trace, marker in trace_markers.items()
+            for name in [trace_names[trace]]
+        ]
+        ax.legend(handles=config_handles, title="Config", fontsize=7, loc="upper left", bbox_to_anchor=(1.02, 1))
+        fig.legend(handles=trace_handles, title="Trace marker", fontsize=7, loc="upper left", bbox_to_anchor=(0.72, 0.48))
+        fig.tight_layout(rect=(0, 0, 0.70, 1))
+        fig.savefig(out / "pareto.png", dpi=200)
+        plt.close(fig)
     else:
         print("No energy_vs_lru values yet: skipped pareto.png")
     print(f"Plots in {out}/")

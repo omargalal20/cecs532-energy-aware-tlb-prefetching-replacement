@@ -6,7 +6,7 @@ A ChampSim trace is a recording of a program's instructions and memory addresses
 benchmark program ──► SimPoint picks representative slices ──► <benchmark>-<slice>B.champsimtrace.xz ──► ChampSim
 ```
 
-This page lists the trace sources we know of, what we verified about each, and how to screen a new one. The measured results for the sources we have run are in the *Trace selection* section of the [README](../README.md#trace-selection).
+This page lists the trace sources we know of, what we verified about each, and how to screen a new one. The measured results for the sources we have run are in the *Trace selection* and *GAP trace screening* sections of the [README](../README.md#trace-selection).
 
 ## DPC-3 SPEC traces (used in this study)
 
@@ -22,11 +22,11 @@ A Zenodo record, [Qualcomm Server ChampSim Traces](https://zenodo.org/records/14
 
 The record does not list the traces inside the archives or describe their TLB behaviour, so we have not checked their STLB MPKI or instruction share. The DPC-3 set has almost no instruction pressure on the STLB (at most 7.7%), so these are the first candidates to screen for iTP.
 
-## GAP and XSBench traces (identified, not used yet)
+## GAP and XSBench traces (three `bc` traces used in this study)
 
 A Zenodo record, [ChampSim Traces for GAP and XSBench](https://zenodo.org/records/20043527) (DOI 10.5281/zenodo.20043527, CC BY 4.0, published May 2026), by Jamet, Alvarez, Jiménez and Casas, holds traces of the GAP graph kernels (`bc`, `bfs`, `cc`, `pr`, `sssp`, `tc`) and four XSBench inputs (`xs_XL64`, `xs_XL100`, `xs_XXL64`, `xs_XXL100`), plus a `weights.tar.gz`. It is 62.3 GB in total; individual archives are 2.9 to 10.0 GB. The record asks users to cite "Characterizing the impact of last-level cache replacement policies on big-data workloads" (IISWC 2020).
 
-It says the traces "can be used in the ChampSim simulator" but does not state the trace format, the tool that produced them or their length, and it says nothing about TLB behaviour. We have not checked that they load in our pinned ChampSim commit or measured their STLB MPKI. Because they are large and graph-like, they are a reasonable candidate for TLB pressure, but that is a hypothesis to test with the screening below.
+It says the traces "can be used in the ChampSim simulator" but does not state the trace format, the tool that produced them or their length, and it says nothing about TLB behaviour. We measured three of them ourselves: `bc.kron-2608B`, `bc.road-131B` and `bc.twitter-1658B` load in our pinned ChampSim commit, have an STLB MPKI of 18.14, 8.61 and 18.70 (10M warmup + 20M simulated, baseline LRU) and 0% instruction share of STLB accesses (see *GAP trace screening* in the [README](../README.md#gap-trace-screening)). Johnny then ran the four required configurations on them; the results are in the README Results section. The other GAP kernels (`bfs`, `cc`, `pr`, `sssp`, `tc`) and the XSBench inputs have not been tried.
 
 ## Screening a new source
 
@@ -45,4 +45,4 @@ For any new trace:
 |---|---|---|---|---|
 | DPC-3 SPEC (Stony Brook) | <https://dpc3.compas.cs.stonybrook.edu/champsim-traces/speccpu/> | Omar | 14 traces | 3 selected (README) |
 | Qualcomm server (Zenodo) | <https://zenodo.org/records/14045186> | | | |
-| GAP and XSBench (Zenodo) | <https://zenodo.org/records/20043527> | Johnny | 3 traces | 3 selected (README) |
+| GAP and XSBench (Zenodo) | <https://zenodo.org/records/20043527> | Johnny | 3 `bc` traces | 3 screened and run with the four required configurations (README) |

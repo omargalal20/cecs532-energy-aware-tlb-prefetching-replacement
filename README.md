@@ -291,6 +291,9 @@ The Pareto plot (speedup against estimated translation energy) will be added onc
 | | `atp_sbfp_pq` | 0.2161 | 1.0221 | 19.83 | 317,630 | −15% | 31,591 |
 | | `atp_sbfp_pq_itp` | 0.2162 | 1.0226 | 19.81 | 317,365 | −15% | 28,497 |
 
+![GAP speedup vs baseline_lru](docs/figures/gap/speedup.png)
+![GAP page walks relative to baseline_lru](docs/figures/gap/page_walks.png)
+
 - On `bc.kron-2608B` no policy changes anything measurable.
 - On `bc.twitter-1658B` ATP stays enabled on its own (31,591 prefetch walks) and `atp_sbfp_pq` gives the largest speedup so far (+2.2%) with 15% fewer page walks. This is the first workload where ATP activates without iTP.
 - On `bc.road-131B` the prefetch queue removes 40% of page walks for +0.1% speed. iTP is slightly faster there (+0.3%) even though walks rise by 12%; we have not explained this and it is a small effect on one short window.

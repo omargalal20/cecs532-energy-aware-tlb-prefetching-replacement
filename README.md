@@ -15,7 +15,7 @@ This repository contains the simulation infrastructure and results for a trace-d
 2. Identify Pareto-optimal configurations.
 3. Characterize which workload types (for example irregular versus regular access patterns) favor which policy, to inform TLB design choices. This follows from the proposal's expected workload dependence.
 
-We answer it by simulating a baseline (LRU replacement, no TLB prefetching), ATP/SBFP, iTP and, if integration is feasible, their combination in ChampSim. Speedup and estimated energy are compared to identify Pareto-optimal configurations.
+We answer it by simulating a baseline (LRU replacement, no TLB prefetching), ATP/SBFP, iTP and their combination in ChampSim. Speedup and estimated energy are compared to identify Pareto-optimal configurations.
 
 **Expected outcome (hypotheses, not results).** The trade-off should vary by workload: aggressive prefetching should raise speed but also energy on irregular workloads, and free prefetching (SBFP) should be among the most efficient. The experiments may instead show one policy to be best on both measures, which is also a useful result.
 
@@ -35,7 +35,7 @@ Both can reduce page walks, but speculative prefetches consume energy and affect
 | `baseline_lru` | none | LRU | Required |
 | `itp` | none | iTP | Required |
 | `atp_sbfp_pq` | ATP + SBFP (free PTEs go to a separate 64-entry prefetch queue, as in the paper) | LRU | Required |
-| `atp_sbfp_pq_itp` | ATP + SBFP with prefetch queue | iTP | Required, if integration is feasible |
+| `atp_sbfp_pq_itp` | ATP + SBFP with prefetch queue | iTP | Required |
 | `atp` , `atp_itp` | ATP only (no SBFP) | LRU / iTP | Diagnostic: isolates SBFP's contribution |
 | `atp_sbfp` , `atp_sbfp_itp` | ATP + SBFP, free PTEs fill the STLB directly (no prefetch queue) | LRU / iTP | Ablation: shows the cost of STLB pollution |
 | STLB-capacity and page-size sensitivity, 4-core runs | — | — | Stretch |
@@ -71,7 +71,7 @@ Per-access energies and leakage come from [CACTI](https://github.com/HewlettPack
 | Core / TLBs | ChampSim defaults: 4 GHz core, STLB 128 sets × 12 ways, 4 KB pages |
 | STLB prefetch queue | `pq_size = 8` (default is 0, which disables STLB prefetching) |
 | Traces | `429.mcf-51B`, `620.omnetpp_s-874B`, `623.xalancbmk_s-700B`, selected by STLB MPKI (see Trace selection below) |
-| Warmup / simulation | Smoke tests: 10M / 20M instructions. Reported runs: to be set once runtime is measured |
+| Warmup / simulation | 20M warmup + 100M simulated instructions for the four required configurations on the SPEC traces; 10M + 20M for the ablation configurations and the GAP traces (a 100M GAP run is still to do) |
 
 ### Trace selection
 
@@ -318,6 +318,12 @@ The Pareto plot (speedup against estimated translation energy) will be added onc
 - CACTI requires power-of-two array sizes; the STLB is approximated.
 - Energy covers translation-related structures and page-walk memory references only, not whole-core energy.
 - Results come from a limited trace set and single-core runs unless the stretch goals are reached.
+- Short measurement windows. The iTP slowdown on `623.xalancbmk_s-700B` is 0.3% at 20M instructions and 2.1% at 100M, so results depend on which part of the trace is measured.
+- Details the papers do not state, which we had to assume (marked `ASSUMPTION` or `assumed` in the code):
+  - SBFP: free-distance counters start at 0; a Sampler entry is removed when it hits; the prefetch queue is FIFO and an entry is removed when it hits; free neighbours are looked up when the page walk completes, and only neighbours that are already mapped are prefetched.
+  - ATP: the three selection counters start at 128, 32 and 2; the MASP table has 64 entries with LRU replacement.
+  - iTP: the 3-bit frequency counter saturates at 7. N=4 and M=8 are the paper's values.
+- Energy inputs are approximations: CACTI uses a 64-byte block as a proxy for a TLB entry and a technology node (90 nm) taken from CACTI's sample configuration, and the page-walk DRAM energy is an estimate, not a measurement.
 
 ## References
 

@@ -59,7 +59,9 @@ def main():
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    grouped_bars(rows, "speedup_vs_lru", "speedup vs baseline_lru", "Speedup (y-axis starts at 0.97)", out / "speedup.png", 1.0, ylim=(0.97, 1.01))
+    sp = [num(r["speedup_vs_lru"]) for r in rows if num(r["speedup_vs_lru"]) is not None]
+    lo, hi = min(min(sp), 1.0) - 0.005, max(max(sp), 1.0) + 0.005   # zoom: differences are a few percent
+    grouped_bars(rows, "speedup_vs_lru", "speedup vs baseline_lru", f"Speedup (y-axis starts at {lo:.3f})", out / "speedup.png", 1.0, ylim=(lo, hi))
     grouped_bars(rows, "stlb_mpki", "STLB MPKI", "STLB misses per kilo-instruction", out / "stlb_mpki.png")
 
     base = {r["trace"]: num(r["page_walks"]) for r in rows if r["config"] == "baseline_lru"}

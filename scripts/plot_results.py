@@ -18,14 +18,14 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-ORDER = ["baseline_lru", "itp", "atp", "atp_sbfp", "atp_itp", "atp_sbfp_itp"]
+ORDER = ["baseline_lru", "itp", "atp_sbfp_pq", "atp_sbfp_pq_itp", "atp", "atp_itp", "atp_sbfp", "atp_sbfp_itp"]
 
 
 def num(x):
     return float(x) if x not in ("", None) else None
 
 
-def grouped_bars(rows, key, ylabel, title, path, baseline_line=None):
+def grouped_bars(rows, key, ylabel, title, path, baseline_line=None, ylim=None):
     traces = sorted({r["trace"] for r in rows})
     configs = [c for c in ORDER if any(r["config"] == c for r in rows)]
     width = 0.8 / max(len(configs), 1)
@@ -42,9 +42,11 @@ def grouped_bars(rows, key, ylabel, title, path, baseline_line=None):
     ax.set_title(title)
     if baseline_line is not None:
         ax.axhline(baseline_line, color="gray", lw=0.8, ls="--")
-    ax.legend(fontsize=8)
+    if ylim is not None:
+        ax.set_ylim(*ylim)
+    ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.01, 1.0))
     fig.tight_layout()
-    fig.savefig(path, dpi=200)
+    fig.savefig(path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -57,7 +59,7 @@ def main():
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    grouped_bars(rows, "speedup_vs_lru", "speedup vs baseline_lru", "Speedup", out / "speedup.png", 1.0)
+    grouped_bars(rows, "speedup_vs_lru", "speedup vs baseline_lru", "Speedup (y-axis starts at 0.97)", out / "speedup.png", 1.0, ylim=(0.97, 1.01))
     grouped_bars(rows, "stlb_mpki", "STLB MPKI", "STLB misses per kilo-instruction", out / "stlb_mpki.png")
 
     base = {r["trace"]: num(r["page_walks"]) for r in rows if r["config"] == "baseline_lru"}

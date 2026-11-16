@@ -71,7 +71,7 @@ Per-access energies and leakage come from [CACTI](https://github.com/HewlettPack
 | Core / TLBs | ChampSim defaults: 4 GHz core, STLB 128 sets × 12 ways, 4 KB pages |
 | STLB prefetch queue | `pq_size = 8` (default is 0, which disables STLB prefetching) |
 | Traces | `429.mcf-51B`, `620.omnetpp_s-874B`, `623.xalancbmk_s-700B`, selected by STLB MPKI (see Trace selection below) |
-| Warmup / simulation | 20M warmup + 100M simulated instructions for the four required configurations on the SPEC traces; 10M + 20M for the ablation configurations and the GAP traces (a 100M GAP run is still to do) |
+| Warmup / simulation | 20M warmup + 100M simulated instructions for the four required configurations on the SPEC traces; 10M + 20M for the ablation configurations; 20M warmup + 100M for the four required configurations on the GAP traces as well (a 10M + 20M GAP run is also available) |
 
 ### Trace selection
 
@@ -274,32 +274,33 @@ The Pareto plot (speedup against estimated translation energy) will be added onc
 - A shorter 10M warmup + 20M run gave the same ranking, except that `623.xalancbmk_s-700B` with iTP looked nearly neutral there (speedup 0.997) and is clearly worse at 100M (0.979). The two windows cover different parts of the trace (the 20M run measures instructions 10M to 30M, the 100M run 20M to 120M). Where they overlap (instructions 20M to 30M) iTP is about 1.0% slower in both runs, and it falls further behind later (1.5% to 3.1% slower per 10M-instruction slice). Walks more than double, yet speed drops only about 2%, because walks on this trace are cheap (about 21 cycles per STLB miss) and partly overlapped by the core. Instruction share of STLB accesses is only 1.6%, so iTP's instruction priority gains little. We read this as phase dependence; the instruction-share explanation is consistent with the counters but not tested separately.
 - The `atp`, `atp_itp`, `atp_sbfp` and `atp_sbfp_itp` ablations were run at 10M + 20M only. Without the prefetch queue, free prefetches pollute the STLB (`623.xalancbmk_s-700B`: 0.989 speedup, +51% walks).
 
-**GAP graph workloads** (10M warmup + 20M simulated instructions, four required configurations; run by Johnny Van). These traces have 0% instruction share of STLB accesses. Short window only, so treat the numbers with the same caution as the 20M SPEC runs.
+**GAP graph workloads** (20M warmup + 100M simulated instructions, four required configurations; run by Johnny Van; a 10M + 20M run gave the same picture). These traces have 0% instruction share of STLB accesses.
 
 | Trace | Config | IPC | Speedup vs LRU | STLB MPKI | Page walks | Walks vs LRU | ATP prefetch walks |
 |---|---|---|---|---|---|---|---|
-| `bc.kron-2608B` | `baseline_lru` | 0.2325 | 1.0000 | 18.14 | 362,873 | — | 0 |
-| | `itp` | 0.2325 | 1.0000 | 18.26 | 365,200 | +0.6% | 0 |
-| | `atp_sbfp_pq` | 0.2325 | 1.0000 | 18.14 | 362,177 | −0.2% | 0 |
-| | `atp_sbfp_pq_itp` | 0.2326 | 1.0001 | 18.26 | 364,285 | +0.4% | 0 |
-| `bc.road-131B` | `baseline_lru` | 0.1293 | 1.0000 | 8.61 | 172,239 | — | 0 |
-| | `itp` | 0.1297 | 1.0031 | 9.68 | 193,541 | +12% | 0 |
-| | `atp_sbfp_pq` | 0.1294 | 1.0011 | 8.61 | 102,528 | −40% | 0 |
-| | `atp_sbfp_pq_itp` | 0.1298 | 1.0044 | 9.65 | 123,505 | −28% | 0 |
-| `bc.twitter-1658B` | `baseline_lru` | 0.2114 | 1.0000 | 18.70 | 374,027 | — | 0 |
-| | `itp` | 0.2117 | 1.0010 | 18.70 | 374,073 | +0.01% | 0 |
-| | `atp_sbfp_pq` | 0.2161 | 1.0221 | 19.83 | 317,630 | −15% | 31,591 |
-| | `atp_sbfp_pq_itp` | 0.2162 | 1.0226 | 19.81 | 317,365 | −15% | 28,497 |
+| `bc.kron-2608B` | `baseline_lru` | 0.2510 | 1.0000 | 18.15 | 1,814,644 | — | 0 |
+| | `itp` | 0.2510 | 0.9999 | 18.28 | 1,828,107 | +0.7% | 0 |
+| | `atp_sbfp_pq` | 0.2510 | 1.0000 | 18.15 | 1,810,048 | −0.3% | 0 |
+| | `atp_sbfp_pq_itp` | 0.2510 | 0.9999 | 18.28 | 1,822,518 | +0.4% | 0 |
+| `bc.road-131B` | `baseline_lru` | 0.1397 | 1.0000 | 8.37 | 836,505 | — | 0 |
+| | `itp` | 0.1399 | 1.0020 | 9.28 | 927,888 | +10.9% | 0 |
+| | `atp_sbfp_pq` | 0.1398 | 1.0011 | 8.36 | 514,241 | −38.5% | 0 |
+| | `atp_sbfp_pq_itp` | 0.1401 | 1.0031 | 9.29 | 607,733 | −27.3% | 0 |
+| `bc.twitter-1658B` | `baseline_lru` | 0.3778 | 1.0000 | 9.55 | 955,310 | — | 0 |
+| | `itp` | 0.3778 | 1.0000 | 9.57 | 957,447 | +0.2% | 0 |
+| | `atp_sbfp_pq` | 0.3854 | 1.0202 | 10.59 | 770,340 | −19.4% | 146,515 |
+| | `atp_sbfp_pq_itp` | 0.3862 | 1.0223 | 10.66 | 778,027 | −18.6% | 149,233 |
 
 ![GAP speedup vs baseline_lru](docs/figures/gap/speedup.png)
 ![GAP page walks relative to baseline_lru](docs/figures/gap/page_walks.png)
 
 - On `bc.kron-2608B` no policy changes anything measurable.
-- On `bc.twitter-1658B` ATP stays enabled on its own (31,591 prefetch walks) and `atp_sbfp_pq` gives the largest speedup so far (+2.2%) with 15% fewer page walks. This is the first workload where ATP activates without iTP.
-- On `bc.road-131B` the prefetch queue removes 40% of page walks for +0.1% speed. iTP is slightly faster there (+0.3%) even though walks rise by 12%; we have not explained this and it is a small effect on one short window.
-- The STLB MPKI column includes prefetch accesses (for example `bc.twitter-1658B` `atp_sbfp_pq` shows more STLB accesses than the baseline), so use page walks to compare.
+- On `bc.twitter-1658B` ATP turns itself on (146,515 prefetch walks) and `atp_sbfp_pq` gives the largest speedup so far (+2.0%, +2.2% at 20M) with 19% fewer page walks. This is the first workload where ATP activates without iTP.
+- On `bc.road-131B` the prefetch queue removes 38% of page walks for +0.1% speed. iTP is slightly faster there (+0.2%) even though walks rise by 11%; we have not explained this and it is a small effect.
+- The window changes the absolute numbers: `bc.twitter-1658B` baseline STLB MPKI is 9.55 at 100M but 18.70 in the 20M screening window, so the two windows cover different phases. The ranking of configurations is the same.
+- The STLB MPKI column includes prefetch accesses, so use page walks to compare.
 
-**Still to come:** energy and EDP per configuration, the Pareto comparison, and a longer window for the GAP traces. Each trace will be tagged with a workload type for objective 3.
+**Still to come:** energy and EDP per configuration, the Pareto comparison, Each trace will be tagged with a workload type for objective 3.
 
 ## Project Status
 

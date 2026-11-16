@@ -58,8 +58,10 @@ STAT_RE = re.compile(
 )
 KV_RE = re.compile(r"([A-Za-z][A-Za-z0-9_]*)=(\d+)")
 
+PSC_STRUCTURES = ("PSC_1X2", "PSC_1X4", "PSC_2X4", "PSC_4X8")
 ONCHIP_STRUCTURES = (
-    "DTLB", "ITLB", "STLB", "PSC", "PQ", "SBFP_FDT", "SBFP_SAMPLER", "ATP_FPQ"
+    "DTLB", "ITLB", "STLB", "PSC", *PSC_STRUCTURES, "PQ", "SBFP_FDT",
+    "SBFP_SAMPLER", "ATP_FPQ"
 )
 CACHE_STRUCTURES = ("L1D", "L2C", "LLC")
 
@@ -215,7 +217,7 @@ def ratio(numerator: int | None, denominator: int | None) -> float | None:
 
 def active_structures(config: str) -> set[str]:
     tokens = set(config.lower().split("_"))
-    active = {"DTLB", "ITLB", "STLB", "PSC", "L1D", "L2C", "LLC"}
+    active = {"DTLB", "ITLB", "STLB", *PSC_STRUCTURES, "L1D", "L2C", "LLC"}
     if "atp" in tokens:
         active.add("ATP_FPQ")
     if "sbfp" in tokens:
@@ -230,13 +232,15 @@ def add_energy(
     dram_nj: float | None, cpu_ghz: float,
 ) -> None:
     ptw, sbfp, atp = run["_ptw"], run["_sbfp"], run["_atp"]
-    pq_mode = ptw.get("pq_inserts") is not None
+    config_tokens = set(run["config"].lower().split("_"))
+    # Determine the implementation from its selected config. Counter presence
+    # is not a reliable mode signal because a zero-valued field may still print.
+    pq_mode = "pq" in config_tokens
     atp_issued = atp.get("issued")
     atp_useful = atp.get("hits_on_prefetched")
     sbfp_issued = ptw.get("pq_inserts") if pq_mode else sbfp.get("free_issued")
     sbfp_useful = ptw.get("pq_hits") if pq_mode else sbfp.get("free_useful")
 
-    config_tokens = set(run["config"].lower().split("_"))
     has_atp = "atp" in config_tokens
     has_sbfp = "sbfp" in config_tokens
     has_pq = "pq" in config_tokens
@@ -265,11 +269,14 @@ def add_energy(
     # ChampSim's counters do not expose separate TLB writes/fills. Count all
     # accesses as read-like; the STLB TOTAL is used for energy, while STLB LOAD
     # misses are retained separately as demand misses (excluding prefetches).
-    access_counts: dict[str, tuple[int, int]] = {
+    # The PTW counter is aggregate across the four page-structure caches.
+    # Current logs show exactly four lookups per walk; assume one lookup in
+    # each cache and price each geometry against its own CACTI row.
+    psc_lookups_each = (ptw.get("psc_lookups", 0) or 0) / len(PSC_STRUCTURES)
+    access_counts: dict[str, tuple[float, float]] = {
         "DTLB": (stats.get("DTLB", {}).get("TOTAL", {}).get("access", 0), 0),
         "ITLB": (stats.get("ITLB", {}).get("TOTAL", {}).get("access", 0), 0),
         "STLB": (run["stlb_total_accesses"], 0),
-        "PSC": (ptw.get("psc_lookups", 0), 0),
         "PQ": (ptw.get("pq_lookups", 0), ptw.get("pq_inserts", 0)),
         # Each tracked FDT update is read-modify-write; a decay shifts all 14
         # counters. Read-only threshold probes are not present in the log.
@@ -286,6 +293,8 @@ def add_energy(
         "L2C": (run["l2c_translation_accesses"], 0),
         "LLC": (run["llc_translation_accesses"], 0),
     }
+    for structure in PSC_STRUCTURES:
+        access_counts[structure] = (psc_lookups_each, 0)
 
     energies: dict[str, float | None] = {}
     active = active_structures(run["config"])
@@ -295,13 +304,21 @@ def add_energy(
         else:
             energies[structure] = component_energy_nj(structure, reads, writes, runtime_s, cacti)
 
+    psc_values = [energies[name] for name in PSC_STRUCTURES]
+    energies["PSC_TOTAL"] = (
+        sum(value for value in psc_values if value is not None)
+        if all(value is not None for value in psc_values) else None
+    )
+
     dram_energy = None if dram_nj is None else run["llc_translation_misses"] * dram_nj
     required = [energies[name] for name in active if name in energies]
     missing = sorted(name for name in active if energies.get(name) is None)
     if dram_nj is None:
         missing.append("DRAM")
 
-    known = sum(value for value in energies.values() if value is not None)
+    # Sum active components only. PSC_TOTAL is an output aggregate of the four
+    # PSC rows and must not be added a second time.
+    known = sum(energies[name] for name in active if energies.get(name) is not None)
     if dram_energy is not None:
         known += dram_energy
     complete = not missing
@@ -309,7 +326,7 @@ def add_energy(
 
     for structure, column in (
         ("DTLB", "dtlb_energy_nj"), ("ITLB", "itlb_energy_nj"),
-        ("STLB", "stlb_energy_nj"), ("PSC", "psc_energy_nj"),
+        ("STLB", "stlb_energy_nj"), ("PSC_TOTAL", "psc_energy_nj"),
         ("PQ", "pq_energy_nj"), ("SBFP_FDT", "sbfp_fdt_energy_nj"),
         ("SBFP_SAMPLER", "sbfp_sampler_energy_nj"),
         ("ATP_FPQ", "atp_fpq_energy_nj"),

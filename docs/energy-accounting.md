@@ -25,7 +25,7 @@ The script maps named counters as follows:
 |---|---|---|
 | DTLB, ITLB | `TOTAL ACCESS` | 0; writes are not separately exposed |
 | STLB | `TOTAL ACCESS` | 0; writes/fills are not separately exposed |
-| PSC | `psc_lookups` | 0 |
+| PSC 1×2, 1×4, 2×4, 4×8 | aggregate `psc_lookups` divided by four per cache | 0 |
 | SBFP prefetch queue (PQ) | `pq_lookups` | `pq_inserts` |
 | SBFP sampler | `sampler_lookups` | `sampler_inserts` |
 | SBFP FDT | tracked updates plus 14 accesses per decay | same as reads |
@@ -39,11 +39,19 @@ omissions are marked in the result table's `energy_notes` field. Total energy,
 energy/baseline, and EDP are blank when any active CACTI row or the DRAM estimate
 is missing; `known_energy_nj` remains a partial sum.
 
+The PSC prototype reports one aggregate lookup counter. The tested logs report
+four PSC lookups per page walk, so the script assumes one lookup per walk in each
+of the four PSC caches. CACTI inputs are kept in four separate rows—`PSC_1X2`,
+`PSC_1X4`, `PSC_2X4`, and `PSC_4X8`—and their energy estimates are summed into
+the single `psc_energy_nj` result column. This assumes each cache is accessed once
+per walk; the current prototype does not expose per-cache counters.
+
 ## Prefetch accuracy
 
 - **ATP:** `hits_on_prefetched / issued`. This is reported separately only when
   SBFP direct-fill activity cannot overlap with the same hit counter.
-- **SBFP with PQ:** `pq_hits / pq_inserts`.
+- **SBFP with PQ:** `pq_hits / pq_inserts`. PQ mode is selected from the config
+  name, not inferred from whether `pq_inserts` appears in the output.
 - **SBFP direct fill:** `free_useful / free_issued`.
 - **Combined accuracy:** useful prefetch hits divided by total issued entries.
   In direct-fill mode, `hits_on_prefetched` already includes ATP and SBFP useful

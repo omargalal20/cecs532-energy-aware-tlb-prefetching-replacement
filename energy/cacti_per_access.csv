@@ -5,3 +5,7 @@ STLB,TBD,TBD,TBD,CACTI (Ayushi)
 PQ,TBD,TBD,TBD,CACTI (Ayushi)
 SBFP_FDT,TBD,TBD,TBD,CACTI (Ayushi)
 PSC,TBD,TBD,TBD,CACTI (Ayushi)
+PSC_1X2,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md
+PSC_1X4,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md
+PSC_2X4,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md
+PSC_4X8,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md

@@ -39,6 +39,11 @@ omissions are marked in the result table's `energy_notes` field. Total energy,
 energy/baseline, and EDP are blank when any active CACTI row or the DRAM estimate
 is missing; `known_energy_nj` remains a partial sum.
 
+The CACTI CSV may include a `note` or `notes` column. Its entry for each active
+structure is copied into `energy_notes`, including proxy descriptions and notes
+for unavailable configurations, so the reported estimates retain their modeling
+assumptions.
+
 The PSC prototype reports one aggregate lookup counter. The tested logs report
 four PSC lookups per page walk, so the script assumes one lookup per walk in each
 of the four PSC caches. CACTI inputs are kept in four separate rows—`PSC_1X2`,

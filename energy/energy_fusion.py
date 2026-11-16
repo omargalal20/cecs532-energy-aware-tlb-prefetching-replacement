@@ -350,6 +350,13 @@ def add_energy(
         notes.append("FDT read-only threshold probes uncounted")
     if "DTLB" in active or "ITLB" in active or "STLB" in active:
         notes.append("TLB fills priced as read-like accesses; STLB writes not split")
+    # Preserve CACTI proxy/failure documentation from either accepted CSV
+    # heading so the assumption remains visible in every affected result row.
+    for structure in sorted(active):
+        row = cacti.get(structure, {})
+        cacti_note = (row.get("note") or row.get("notes") or "").strip()
+        if cacti_note:
+            notes.append(f"{structure}: {cacti_note}")
     run["energy_notes"] = "; ".join(notes)
 
 

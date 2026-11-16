@@ -1,11 +1,13 @@
-structure,read_nj,write_nj,leakage_mw,source
-DTLB,TBD,TBD,TBD,CACTI (Ayushi)
-ITLB,TBD,TBD,TBD,CACTI (Ayushi)
-STLB,TBD,TBD,TBD,CACTI (Ayushi)
-PQ,TBD,TBD,TBD,CACTI (Ayushi)
-SBFP_FDT,TBD,TBD,TBD,CACTI (Ayushi)
-PSC,TBD,TBD,TBD,CACTI (Ayushi)
-PSC_1X2,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md
-PSC_1X4,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md
-PSC_2X4,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md
-PSC_4X8,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md
+structure,read_nj,write_nj,leakage_mw,source,note
+DTLB,0.360439,0.335661,4.4965,configs/dtlb_16x4_128b_proxy.cfg,"proxy: 128B block, real entry is 103 bits; 64B failed. 256B sensitivity config configs/dtlb_16x4_256b_proxy.cfg: read 0.367654 nJ, write 0.349165 nJ, leakage 7.76424 mW. 10-bit permission sensitivity modeled as 58-bit tag proxy; configs/dtlb_16x4_128b_perm10_proxy.cfg: read 0.361516 nJ, write 0.33743 nJ, leakage 4.58787 mW."
+ITLB,0.360439,0.335661,4.4965,configs/itlb_16x4_128b_proxy.cfg,"proxy: 128B block, real entry is 103 bits; 64B failed. 256B sensitivity config configs/itlb_16x4_256b_proxy.cfg: read 0.367654 nJ, write 0.349165 nJ, leakage 7.76424 mW. 10-bit permission sensitivity modeled as 58-bit tag proxy; configs/itlb_16x4_128b_perm10_proxy.cfg: read 0.361516 nJ, write 0.33743 nJ, leakage 4.58787 mW."
+STLB,TBD,TBD,TBD,CACTI (Ayushi),
+PQ,0.186486,0.207663,5.95101,configs/pq_64_fa_64b_proxy.cfg,"proxy: 64B block, real entry is 109 bits; 128B sensitivity config configs/pq_64_fa_128b_proxy.cfg: read 0.639596 nJ, write 0.679982 nJ, leakage 15.771 mW."
+SBFP_FDT,0.0874022,0.0968997,1.16012,configs/sbfp_fdt_16x1_128b_ram_proxy.cfg,"proxy: 128B RAM block, real counter is 10 bits; 14 counters total. 64B RAM failed. 256B sensitivity config configs/sbfp_fdt_16x1_256b_ram_proxy.cfg: read 0.0892271 nJ, write 0.110403 nJ, leakage 2.10259 mW."
+PSC,TBD,TBD,TBD,CACTI (Ayushi),No aggregate value; use the separate PSC geometry rows.
+PSC_1X2,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md,Unavailable: CACTI produced no energy values; see configs/cacti_psc_notes.md
+PSC_1X4,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md,Unavailable: CACTI produced no energy values; see configs/cacti_psc_notes.md
+PSC_2X4,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md,Unavailable: CACTI produced no energy values; see configs/cacti_psc_notes.md
+PSC_4X8,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md,Unavailable: CACTI produced no energy values; see configs/cacti_psc_notes.md
+SBFP_SAMPLER,0.186486,0.207663,5.95101,configs/sbfp_sampler_64_fa_64b_proxy.cfg,"proxy: 64B block, real entry is 56 bits; 128B sensitivity config configs/sbfp_sampler_64_fa_128b_proxy.cfg: read 0.639596 nJ, write 0.679982 nJ, leakage 15.771 mW."
+ATP_FPQ,0.185085,0.187989,4.20669,configs/atp_fpq_16_fa_64b_proxy.cfg,"proxy: 64B block, real entry is 53 bits; one 16-entry queue modeled. 128B sensitivity config configs/atp_fpq_16_fa_128b_proxy.cfg: read 0.637011 nJ, write 0.642548 nJ, leakage 12.864 mW."

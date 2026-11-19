@@ -78,7 +78,7 @@ CACTI did not directly provide the project's 1,536-entry, 128-set × 12-way STLB
 
 The 2,048-to-1,024 ratios are 2.447 read, 2.538 write, and 2.022 leakage at 90 nm; at 22 nm they are 2.291, 2.274, and 1.949. The ratio shifts at 22 nm are −6.38%, −10.43%, and −3.61%, respectively.
 
-For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et al. [5]. Their Table 2 gives this for DDR3 at 1333 MHz with a page-closed policy and two DIMMs per channel: 18 nJ array read + 1 nJ read I/O + 12 nJ additional termination + 25 nJ activate/pre-charge. The paper states that one memory access is 64 bytes. This is a published system estimate, not a measurement of our machine; the project applies it once per LLC `TRANSLATION MISS` counted as one DRAM read.
+For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et al. [5]. Table 2 reports this value for DDR3 at 1333 MHz with two DIMMs per channel and labels its average-read row as **page-open**: 18 nJ array read + 1 nJ read I/O + 12 nJ additional termination + 25 nJ activate/pre-charge. The paper states that one memory access is 64 bytes and discusses a page-closed policy elsewhere; this README reports the Table 2 row label specifically, without treating it as the paper's general policy assumption. This is a published system estimate, not a measurement of our machine; the project applies it once per LLC `TRANSLATION MISS` counted as one DRAM read.
 
 **Metrics.** IPC and speedup over `baseline_lru`; STLB misses (MPKI); page-walk memory references; prefetch accuracy; estimated translation energy; EDP as a derived comparison.
 

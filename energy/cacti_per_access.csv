@@ -1,7 +1,7 @@
 structure,read_nj,write_nj,leakage_mw,source
 DTLB,TBD,TBD,TBD,CACTI (Ayushi)
 ITLB,TBD,TBD,TBD,CACTI (Ayushi)
-STLB,TBD,TBD,TBD,CACTI (Ayushi)
+STLB,1.3166715,1.3557765,46.75765,90nm CACTI linear midpoint; see docs/cacti-sensitivity.md
 PQ,TBD,TBD,TBD,CACTI (Ayushi)
 SBFP_FDT,TBD,TBD,TBD,CACTI (Ayushi)
 PSC,TBD,TBD,TBD,CACTI (Ayushi)

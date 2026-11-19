@@ -61,6 +61,25 @@ EDP       = E_total · t_run
 
 Per-access energies and leakage come from [CACTI](https://github.com/HewlettPackard/cacti) models of each structure (`energy/cacti_per_access.csv`). Page-walk accesses to DRAM use a separate energy estimate. CACTI requires power-of-two sizes, so the 1536-entry STLB (128 sets × 12 ways) is modeled at nearby power-of-two sizes. This approximation is stated wherever results are reported.
 
+### STLB and page-walk energy inputs
+
+The final energy table uses 90 nm; 22 nm is a technology-node sensitivity comparison. CACTI 7.0.3DD Prerelease (Aug. 2012; repository pin `1ffd8df`) was run with 128 sets, a 64-byte block, a 49-bit tag, and one read/write port. The 64-byte block is a CACTI cache-model proxy, not a literal TLB entry.
+
+| Entries | Node / role | Read energy (nJ/access) | Write energy (nJ/access) | Leakage (mW) |
+|---:|---|---:|---:|---:|
+| 1,024 (128 × 8) | 90 nm | 0.764013 | 0.766323 | 30.9463 |
+| 2,048 (128 × 16) | 90 nm | 1.86933 | 1.94523 | 62.569 |
+| **1,536 estimate (128 × 12)** | **90 nm final** | **1.3166715** | **1.3557765** | **46.75765** |
+| 1,024 (128 × 8) | 22 nm sensitivity | 0.0838914 | 0.0889089 | 23.0347 |
+| 2,048 (128 × 16) | 22 nm sensitivity | 0.192163 | 0.202141 | 44.8915 |
+| **1,536 midpoint (128 × 12)** | **22 nm sensitivity** | **0.1380272** | **0.14552495** | **33.9631** |
+
+CACTI did not directly provide the project's 1,536-entry, 128-set × 12-way STLB estimate. We use the arithmetic midpoint for each metric: `E_1536 = (E_1024 + E_2048) / 2`. At 90 nm, the endpoint half-ranges are 0.5526585 nJ/read, 0.5894535 nJ/write, and 15.81135 mW leakage. These are sensitivity indicators, not guaranteed error bounds if CACTI's array organization changes nonlinearly.
+
+The 2,048-to-1,024 ratios are 2.447 read, 2.538 write, and 2.022 leakage at 90 nm; at 22 nm they are 2.291, 2.274, and 1.949. The ratio shifts at 22 nm are −6.38%, −10.43%, and −3.61%, respectively.
+
+For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et al. [5]. Their Table 2 gives this for DDR3 at 1333 MHz with a page-closed policy and two DIMMs per channel: 18 nJ array read + 1 nJ read I/O + 12 nJ additional termination + 25 nJ activate/pre-charge. The paper states that one memory access is 64 bytes. This is a published system estimate, not a measurement of our machine; the project applies it once per LLC `TRANSLATION MISS` counted as one DRAM read.
+
 **Metrics.** IPC and speedup over `baseline_lru`; STLB misses (MPKI); page-walk memory references; prefetch accuracy; estimated translation energy; EDP as a derived comparison.
 
 ## Experimental Setup
@@ -332,6 +351,7 @@ The Pareto plot (speedup against estimated translation energy) will be added onc
 2. D. Chasapis, G. Vavouliotis, D. A. Jiménez, and M. Casas, "Instruction-aware cooperative TLB and cache replacement policies," in *Proc. 30th ACM Int. Conf. Archit. Support Program. Lang. Oper. Syst. (ASPLOS)*, 2025, pp. 619–636.
 3. N. Gober et al., "The Championship Simulator: Architectural Simulation for Education and Competition," arXiv:2210.14324, 2022.
 4. CACTI, Hewlett Packard Labs, <https://github.com/HewlettPackard/cacti>.
+5. H. David, C. Fallin, E. Gorbatov, U. R. Hanebutte, and O. Mutlu, “Memory Power Management via Dynamic Voltage/Frequency Scaling,” in *Proc. 8th ACM Int. Conf. on Autonomic Computing (ICAC)*, 2011, pp. 31–40, Table 2. https://doi.org/10.1145/1998582.1998590.
 
 ## Authors
 

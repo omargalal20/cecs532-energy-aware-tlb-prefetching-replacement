@@ -16,8 +16,10 @@ read-like accesses because the logs do not separate lookup and fill writes.
 
 Page-walk cache activity uses the `TRANSLATION ACCESS` counters for L1D, L2C, and
 LLC. Each LLC `TRANSLATION MISS` is counted as one DRAM read and multiplied by
-`--dram-nj-per-access`. This is a modeling assumption, not an independently
-measured DRAM energy value.
+`--dram-nj-per-access` (default 56 nJ). This is a modeling assumption, not an
+independently measured DRAM energy value. L1D, L2C, and LLC use dynamic energy
+only; leakage is excluded. ATP_FPQ dynamic energy and leakage include all three
+fake queues, although the per-queue CACTI row models one queue.
 
 The script maps named counters as follows:
 
@@ -25,7 +27,7 @@ The script maps named counters as follows:
 |---|---|---|
 | DTLB, ITLB | `TOTAL ACCESS` | 0; writes are not separately exposed |
 | STLB | `TOTAL ACCESS` | 0; writes/fills are not separately exposed |
-| PSC 1×2, 1×4, 2×4, 4×8 | aggregate `psc_lookups` divided by four per cache | 0 |
+| PSC | `psc_lookups` | 0; lower bound is zero, with optional upper-bound proxy |
 | SBFP prefetch queue (PQ) | `pq_lookups` | `pq_inserts` |
 | SBFP sampler | `sampler_lookups` | `sampler_inserts` |
 | SBFP FDT | tracked updates plus 14 accesses per decay | same as reads |
@@ -35,9 +37,12 @@ The script maps named counters as follows:
 For the FDT, the log does not count read-only threshold probes, so the estimate
 includes only tracked read-modify-write updates and decay shifts. For ATP fake
 queues, writes are omitted because the current log has no insertion counter. These
-omissions are marked in the result table's `energy_notes` field. Total energy,
-energy/baseline, and EDP are blank when any active CACTI row or the DRAM estimate
-is missing; `known_energy_nj` remains a partial sum.
+omissions are marked in the result table's `energy_notes` field. The legacy
+`energy_nj`, `energy_vs_lru`, and `edp` fields are the PSC=0 lower-bound scenario.
+`energy_nj_upper`, `energy_vs_lru_upper`, and `edp_upper` report the upper-bound
+scenario when the `PSC_UPPER_PROXY` CACTI row is populated. A scenario is blank
+if another active structure or the DRAM estimate is missing; `known_energy_nj`
+remains a partial sum.
 
 The CACTI CSV may include a `note` or `notes` column. Its entry for each active
 structure is copied into `energy_notes`, including proxy descriptions and notes
@@ -45,11 +50,12 @@ for unavailable configurations, so the reported estimates retain their modeling
 assumptions.
 
 The PSC prototype reports one aggregate lookup counter. The tested logs report
-four PSC lookups per page walk, so the script assumes one lookup per walk in each
-of the four PSC caches. CACTI inputs are kept in four separate rows—`PSC_1X2`,
-`PSC_1X4`, `PSC_2X4`, and `PSC_4X8`—and their energy estimates are summed into
-the single `psc_energy_nj` result column. This assumes each cache is accessed once
-per walk; the current prototype does not expose per-cache counters.
+four PSC lookups per page walk, but CACTI could not model the four geometries
+directly. Therefore `psc_energy_nj` is a lower bound of zero. If the team supplies
+a supported, documented proxy in a `PSC_UPPER_PROXY` row, the script prices all
+aggregate PSC lookups against that per-access proxy and counts leakage for four
+PSC caches. The proxy note is copied to `energy_notes`; it must be described as
+an upper-bound estimate, not a direct measurement of the failed geometries.
 
 ## Prefetch accuracy
 

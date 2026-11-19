@@ -45,7 +45,9 @@ COLUMNS = [
     "sbfp_fdt_energy_nj", "sbfp_sampler_energy_nj", "atp_fpq_energy_nj",
     "l1d_translation_energy_nj", "l2c_translation_energy_nj",
     "llc_translation_energy_nj", "dram_energy_nj", "known_energy_nj",
-    "energy_nj", "energy_vs_lru", "edp", "energy_coverage", "energy_notes",
+    "psc_energy_nj_upper", "energy_nj", "energy_nj_upper",
+    "energy_vs_lru", "energy_vs_lru_upper", "edp", "edp_upper",
+    "energy_coverage", "energy_notes",
 ]
 
 IPC_RE = re.compile(
@@ -185,13 +187,17 @@ def load_cacti(path: Path) -> dict[str, dict[str, str]]:
         return {row["structure"].strip().upper(): row for row in reader if row.get("structure")}
 
 
-def cacti_ready(cacti: dict[str, dict[str, str]], structure: str) -> bool:
+def cacti_ready(
+    cacti: dict[str, dict[str, str]], structure: str, *, include_leakage: bool = True,
+) -> bool:
     row = cacti.get(structure)
     if not row:
         return False
     try:
-        return all(math.isfinite(float(row[key])) and float(row[key]) >= 0
-                   for key in ("read_nj", "write_nj", "leakage_mw"))
+        keys = ["read_nj", "write_nj"]
+        if include_leakage:
+            keys.append("leakage_mw")
+        return all(math.isfinite(float(row[key])) and float(row[key]) >= 0 for key in keys)
     except (KeyError, TypeError, ValueError):
         return False
 
@@ -199,13 +205,14 @@ def cacti_ready(cacti: dict[str, dict[str, str]], structure: str) -> bool:
 def component_energy_nj(
     structure: str, reads: int, writes: int, runtime_s: float,
     cacti: dict[str, dict[str, str]], *, include_leakage: bool = True,
+    leakage_instances: int = 1,
 ) -> float | None:
-    if not cacti_ready(cacti, structure):
+    if not cacti_ready(cacti, structure, include_leakage=include_leakage):
         return None
     row = cacti[structure]
     energy = reads * float(row["read_nj"]) + writes * float(row["write_nj"])
     if include_leakage:
-        energy += float(row["leakage_mw"]) * runtime_s * 1e6
+        energy += leakage_instances * float(row["leakage_mw"]) * runtime_s * 1e6
     return energy
 
 
@@ -217,7 +224,7 @@ def ratio(numerator: int | None, denominator: int | None) -> float | None:
 
 def active_structures(config: str) -> set[str]:
     tokens = set(config.lower().split("_"))
-    active = {"DTLB", "ITLB", "STLB", *PSC_STRUCTURES, "L1D", "L2C", "LLC"}
+    active = {"DTLB", "ITLB", "STLB", "L1D", "L2C", "LLC"}
     if "atp" in tokens:
         active.add("ATP_FPQ")
     if "sbfp" in tokens:
@@ -270,8 +277,8 @@ def add_energy(
     # accesses as read-like; the STLB TOTAL is used for energy, while STLB LOAD
     # misses are retained separately as demand misses (excluding prefetches).
     # The PTW counter is aggregate across the four page-structure caches.
-    # Current logs show exactly four lookups per walk; assume one lookup in
-    # each cache and price each geometry against its own CACTI row.
+    # Current logs show exactly four lookups per walk. Keep the aggregate so
+    # one documented CACTI proxy can provide a PSC upper-bound estimate.
     psc_lookups_each = (ptw.get("psc_lookups", 0) or 0) / len(PSC_STRUCTURES)
     access_counts: dict[str, tuple[float, float]] = {
         "DTLB": (stats.get("DTLB", {}).get("TOTAL", {}).get("access", 0), 0),
@@ -293,40 +300,59 @@ def add_energy(
         "L2C": (run["l2c_translation_accesses"], 0),
         "LLC": (run["llc_translation_accesses"], 0),
     }
-    for structure in PSC_STRUCTURES:
-        access_counts[structure] = (psc_lookups_each, 0)
-
     energies: dict[str, float | None] = {}
     active = active_structures(run["config"])
     for structure, (reads, writes) in access_counts.items():
         if structure not in active:
             energies[structure] = 0.0
         else:
-            energies[structure] = component_energy_nj(structure, reads, writes, runtime_s, cacti)
+            cache_dynamic_only = structure in CACHE_STRUCTURES
+            energies[structure] = component_energy_nj(
+                structure, reads, writes, runtime_s, cacti,
+                include_leakage=not cache_dynamic_only,
+                leakage_instances=3 if structure == "ATP_FPQ" else 1,
+            )
 
-    psc_values = [energies[name] for name in PSC_STRUCTURES]
-    energies["PSC_TOTAL"] = (
-        sum(value for value in psc_values if value is not None)
-        if all(value is not None for value in psc_values) else None
-    )
+    # PSC CACTI failures are represented as an interval: zero is the lower
+    # bound, while a separately documented PSC_UPPER_PROXY row can supply the
+    # upper bound. If the four geometry-specific rows eventually become
+    # usable, use their sum instead of the generic proxy.
+    psc_lower = 0.0
+    psc_upper: float | None = None
+    psc_total_lookups = ptw.get("psc_lookups", 0) or 0
+    if all(cacti_ready(cacti, name) for name in PSC_STRUCTURES):
+        psc_parts = [
+            component_energy_nj(name, psc_lookups_each, 0, runtime_s, cacti)
+            for name in PSC_STRUCTURES
+        ]
+        if all(value is not None for value in psc_parts):
+            psc_upper = sum(value for value in psc_parts if value is not None)
+    elif cacti_ready(cacti, "PSC_UPPER_PROXY"):
+        psc_upper = component_energy_nj(
+            "PSC_UPPER_PROXY", psc_total_lookups, 0, runtime_s, cacti,
+            leakage_instances=len(PSC_STRUCTURES),
+        )
 
     dram_energy = None if dram_nj is None else run["llc_translation_misses"] * dram_nj
-    required = [energies[name] for name in active if name in energies]
     missing = sorted(name for name in active if energies.get(name) is None)
     if dram_nj is None:
         missing.append("DRAM")
 
-    # Sum active components only. PSC_TOTAL is an output aggregate of the four
-    # PSC rows and must not be added a second time.
+    # known_energy_nj is the modeled partial sum and excludes PSC; PSC is
+    # separately exposed as a lower/upper bound.
     known = sum(energies[name] for name in active if energies.get(name) is not None)
     if dram_energy is not None:
         known += dram_energy
-    complete = not missing
-    total = known if complete else None
+    complete_lower = not missing
+    total_lower = known if complete_lower else None
+    total_upper = (
+        known + psc_upper
+        if complete_lower and psc_upper is not None else None
+    )
 
     for structure, column in (
         ("DTLB", "dtlb_energy_nj"), ("ITLB", "itlb_energy_nj"),
-        ("STLB", "stlb_energy_nj"), ("PSC_TOTAL", "psc_energy_nj"),
+        ("STLB", "stlb_energy_nj"),
         ("PQ", "pq_energy_nj"), ("SBFP_FDT", "sbfp_fdt_energy_nj"),
         ("SBFP_SAMPLER", "sbfp_sampler_energy_nj"),
         ("ATP_FPQ", "atp_fpq_energy_nj"),
@@ -337,15 +363,22 @@ def add_energy(
         run[column] = energies[structure]
     run["dram_energy_nj"] = dram_energy
     run["known_energy_nj"] = known
-    run["energy_nj"] = total
-    run["edp"] = total * runtime_s if total is not None else None
+    # The legacy energy_nj/edp columns now explicitly hold the lower-bound
+    # scenario (PSC=0); upper-bound proxy results are in separate columns.
+    run["psc_energy_nj"] = psc_lower
+    run["psc_energy_nj_upper"] = psc_upper
+    run["energy_nj"] = total_lower
+    run["energy_nj_upper"] = total_upper
+    run["edp"] = total_lower * runtime_s if total_lower is not None else None
+    run["edp_upper"] = total_upper * runtime_s if total_upper is not None else None
     run["energy_coverage"] = (
-        "all required inputs present (estimate)"
-        if complete else "partial; missing " + ", ".join(missing)
+        ("PSC range available (0 lower bound; proxy upper bound)"
+         if total_upper is not None else "PSC lower bound only; upper proxy unavailable")
+        if complete_lower else "partial; missing " + ", ".join(missing)
     )
     notes = []
     if "ATP_FPQ" in active:
-        notes.append("ATP_FPQ writes uncounted and excluded")
+        notes.append("ATP_FPQ energy includes 3 queues; writes uncounted and excluded")
     if "SBFP_FDT" in active:
         notes.append("FDT read-only threshold probes uncounted")
     if "DTLB" in active or "ITLB" in active or "STLB" in active:
@@ -357,6 +390,12 @@ def add_energy(
         cacti_note = (row.get("note") or row.get("notes") or "").strip()
         if cacti_note:
             notes.append(f"{structure}: {cacti_note}")
+    for structure in (*PSC_STRUCTURES, "PSC_UPPER_PROXY"):
+        row = cacti.get(structure, {})
+        cacti_note = (row.get("note") or row.get("notes") or "").strip()
+        if cacti_note:
+            notes.append(f"{structure}: {cacti_note}")
+    notes.append("PSC lower bound assumes 0 nJ; upper bound uses PSC_UPPER_PROXY when available")
     run["energy_notes"] = "; ".join(notes)
 
 
@@ -367,7 +406,7 @@ def main() -> None:
     parser.add_argument("--cacti-csv", type=Path, default=CACTI_CSV)
     parser.add_argument("--cpu-ghz", type=float, default=DEFAULT_CPU_GHZ)
     parser.add_argument(
-        "--dram-nj-per-access", type=float,
+        "--dram-nj-per-access", type=float, default=56.0,
         help="Estimated energy for one DRAM read caused by an LLC translation miss (nJ)",
     )
     args = parser.parse_args()
@@ -398,6 +437,11 @@ def main() -> None:
         run["energy_vs_lru"] = (
             run["energy_nj"] / base["energy_nj"]
             if base and run["energy_nj"] is not None and base["energy_nj"]
+            else None
+        )
+        run["energy_vs_lru_upper"] = (
+            run["energy_nj_upper"] / base["energy_nj_upper"]
+            if base and run["energy_nj_upper"] is not None and base["energy_nj_upper"]
             else None
         )
 

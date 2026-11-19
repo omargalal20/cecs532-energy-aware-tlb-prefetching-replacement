@@ -68,10 +68,13 @@ def main():
     pts = defaultdict(list)
     for r in rows:
         if num(r["energy_vs_lru"]) is not None and num(r["speedup_vs_lru"]) is not None:
-            pts[r["config"]].append((num(r["energy_vs_lru"]), num(r["speedup_vs_lru"]), r["trace"]))
+            pts[r["config"]].append((
+                num(r["energy_vs_lru"]), num(r["speedup_vs_lru"]), r["trace"],
+                num(r.get("energy_vs_lru_upper")),
+            ))
     if pts:
         fig, ax = plt.subplots(figsize=(10, 5))
-        traces = sorted({trace for points in pts.values() for _, _, trace in points})
+        traces = sorted({trace for points in pts.values() for _, _, trace, _ in points})
         marker_cycle = ["o", "s", "^", "D", "v", "P", "X", "*"]
         trace_markers = {trace: marker_cycle[i % len(marker_cycle)] for i, trace in enumerate(traces)}
         trace_names = {trace: trace.split("-")[0] for trace in traces}
@@ -81,12 +84,18 @@ def main():
             color = colors[i % len(colors)]
             config_handles.append(Line2D([], [], marker="o", linestyle="None", color=color, label=config))
             for trace, marker in trace_markers.items():
-                matches = [(x, y) for x, y, name in points if name == trace]
-                if matches:
-                    ax.scatter([x for x, _ in matches], [y for _, y in matches], color=color, marker=marker)
+                matches = [(lo, y, hi) for lo, y, name, hi in points if name == trace]
+                for lo, y, hi in matches:
+                    if hi is not None:
+                        center = (lo + hi) / 2
+                        half_range = abs(hi - lo) / 2
+                        ax.errorbar(center, y, xerr=half_range, color=color,
+                                    marker=marker, capsize=2, linestyle="none")
+                    else:
+                        ax.scatter([lo], [y], color=color, marker=marker)
         ax.axhline(1, color="gray", lw=0.8, ls="--")
         ax.axvline(1, color="gray", lw=0.8, ls="--")
-        ax.set_xlabel("estimated translation energy vs baseline_lru (lower is better)")
+        ax.set_xlabel("translation energy vs baseline_lru (PSC lower/upper scenarios; lower is better)")
         ax.set_ylabel("speedup vs baseline_lru (higher is better)")
         trace_handles = [
             Line2D([], [], marker=marker, linestyle="None", color="black", label=name)

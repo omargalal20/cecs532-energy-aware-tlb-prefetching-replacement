@@ -50,13 +50,14 @@ Both can reduce page walks, but speculative prefetches consume energy and affect
 
 **Simulator.** [ChampSim](https://github.com/ChampSim/ChampSim), pinned to commit `410cee6` (see `scripts/setup.sh`). It models a TLB hierarchy and a hardware page-table walker with page-structure caches. It ships no TLB-specific prefetcher and no iTP, so these are implemented as ChampSim modules in this project.
 
-**Energy model.** Dynamic energy is access counts times per-access energy, plus leakage over the simulated runtime:
+**Energy model.** Dynamic energy is access counts times per-access energy. Leakage is added for modeled on-chip structures; L1D, L2C, and LLC translation accesses use dynamic energy only, and ATP fake-queue leakage is counted for all three queues. If cache CACTI rows are unavailable, the script excludes cache energy for page-walk accesses and labels that omission in the result table. PSC is reported with a zero lower bound and an upper-bound proxy copied from the 64-entry fully associative PQ CACTI estimate (64 B block, 90 nm). The proxy is larger than all four PSC geometries (2, 4, 8, and 32 entries); those geometries failed in CACTI with exit code 139.
 
 ```
 E_dynamic = Σ_s ( reads_s · e_read,s + writes_s · e_write,s )     s ∈ {DTLB, ITLB, STLB, PQ, SBFP tables, PSC}
 E_leakage = Σ_s P_leak,s · t_run                                   t_run = cycles / frequency
-E_total   = E_dynamic + E_leakage + E_pagewalk_memory
-EDP       = E_total · t_run
+E_total,lower = E_dynamic + E_leakage + E_pagewalk_memory   (PSC = 0)
+E_total,upper = E_total,lower + E_PSC,proxy                (when proxy exists)
+EDP_lower/upper = E_total,lower/upper · t_run
 ```
 
 Per-access energies and leakage come from [CACTI](https://github.com/HewlettPackard/cacti) models of each structure (`energy/cacti_per_access.csv`). Page-walk accesses to DRAM use a separate energy estimate. CACTI requires power-of-two sizes, so the 1536-entry STLB (128 sets × 12 ways) is modeled at nearby power-of-two sizes. This approximation is stated wherever results are reported.
@@ -252,15 +253,15 @@ TRACES="<trace> <trace>" scripts/run_all.sh 10 20 baseline_lru itp   # other tra
 ### 7. Compute energy, speedup and EDP
 
 ```bash
-python3 energy/energy_fusion.py results/raw/*.txt --out results/results_table.csv
+python3 energy/energy_fusion.py results/raw/*.txt --cacti-csv energy/cacti_per_access.csv --dram-nj-per-access 56 --out results/results_table.csv
 python3 scripts/plot_results.py
 ```
 
-Energy columns stay empty until `energy/cacti_per_access.csv` contains CACTI values.
+The script reports PSC=0 lower-bound totals when required structure inputs and the DRAM estimate are available. Missing L1D/L2C/LLC CACTI rows are optional: cache energy for page-walk accesses is excluded and the result is labeled accordingly. The upper-bound PSC scenario uses `PSC_UPPER_PROXY` when present, copied from the 64-entry fully associative PQ proxy at 90 nm; until then, it uses the PQ row directly. The default DRAM estimate is 56 nJ per LLC translation miss, using the team’s cited 64-byte-read assumption. See [docs/energy-accounting.md](docs/energy-accounting.md) for counter mappings and assumptions.
 
 ## Results
 
-Measured on single-core ChampSim, 20M warmup + 100M simulated instructions, for the four required configurations. Raw outputs: `results/raw_20_100/`. Speedup is cycles of `baseline_lru` divided by cycles of the configuration. Page walks are the walks counted by the page-table walker (for the baseline they equal the STLB misses; with the prefetch queue, STLB misses served from the queue do not start a walk, so walks can be lower than STLB misses). STLB MPKI is taken from the STLB miss counter, which still counts prefetch accesses until the fusion script uses demand-only counters. Energy and EDP are filled in once the CACTI values and the energy-fusion update are merged.
+Measured on single-core ChampSim, 20M warmup + 100M simulated instructions, for the four required configurations. Raw outputs: `results/raw_20_100/`. Speedup is cycles of `baseline_lru` divided by cycles of the configuration. Page walks are the walks counted by the page-table walker (for the baseline they equal the STLB misses; with the prefetch queue, STLB misses served from the queue do not start a walk, so walks can be lower than STLB misses). STLB MPKI uses STLB LOAD misses (demand misses); STLB TOTAL ACCESS remains the activity input for STLB energy because it includes prefetch accesses. Energy outputs use PSC=0 as the lower-bound scenario and the 64-entry PQ proxy as the PSC upper-bound scenario. If cache CACTI rows are missing, page-walk cache energy is excluded and flagged in the output. The DRAM estimate is 56 nJ per LLC translation miss under the cited 64-byte read assumption. See [docs/energy-accounting.md](docs/energy-accounting.md) for definitions and current limitations.
 
 | Trace | Config | IPC | Speedup vs LRU | STLB MPKI | Page walks | Walks vs LRU | Energy vs LRU | EDP |
 |---|---|---|---|---|---|---|---|---|

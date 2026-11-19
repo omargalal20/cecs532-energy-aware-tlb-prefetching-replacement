@@ -2,6 +2,9 @@
 
 `energy/energy_fusion.py` combines ChampSim activity counters, per-access CACTI
 values, and an explicit DRAM-read estimate. All energy results are estimates.
+Missing required CACTI values leave totals and EDP blank. L1D, L2C, and LLC rows
+are optional; if one is unavailable, its page-walk cache energy is excluded and
+the result is labeled accordingly.
 
 ## Counters and energy
 
@@ -40,9 +43,10 @@ queues, writes are omitted because the current log has no insertion counter. The
 omissions are marked in the result table's `energy_notes` field. The legacy
 `energy_nj`, `energy_vs_lru`, and `edp` fields are the PSC=0 lower-bound scenario.
 `energy_nj_upper`, `energy_vs_lru_upper`, and `edp_upper` report the upper-bound
-scenario when the `PSC_UPPER_PROXY` CACTI row is populated. A scenario is blank
-if another active structure or the DRAM estimate is missing; `known_energy_nj`
-remains a partial sum.
+scenario when the `PSC_UPPER_PROXY` row or fallback PQ row is populated. A scenario is blank
+if another required structure or the DRAM estimate is missing; `known_energy_nj`
+remains a partial sum. Missing L1D/L2C/LLC rows do not block totals, but the
+excluded cache energy is listed in `energy_coverage` and `energy_notes`.
 
 The CACTI CSV may include a `note` or `notes` column. Its entry for each active
 structure is copied into `energy_notes`, including proxy descriptions and notes
@@ -50,12 +54,16 @@ for unavailable configurations, so the reported estimates retain their modeling
 assumptions.
 
 The PSC prototype reports one aggregate lookup counter. The tested logs report
-four PSC lookups per page walk, but CACTI could not model the four geometries
-directly. Therefore `psc_energy_nj` is a lower bound of zero. If the team supplies
-a supported, documented proxy in a `PSC_UPPER_PROXY` row, the script prices all
-aggregate PSC lookups against that per-access proxy and counts leakage for four
-PSC caches. The proxy note is copied to `energy_notes`; it must be described as
-an upper-bound estimate, not a direct measurement of the failed geometries.
+four PSC lookups per page walk, but CACTI could not model the four PSC geometries
+(2, 4, 8, and 32 entries); those runs exited with code 139. Therefore
+`psc_energy_nj` is a lower bound of zero. For the upper scenario, the
+`PSC_UPPER_PROXY` row should copy the existing 64-entry fully associative PQ
+proxy (64 B block, 90 nm). The script uses that explicit row when present, and
+falls back to the PQ row itself until the alias is added. The proxy is larger
+than every PSC geometry. The script prices aggregate PSC lookups against that
+per-access proxy and counts leakage for four PSC structures. The row note is
+carried into `energy_notes`; this is a labeled upper-bound estimate, not a
+direct measurement of the failed PSCs.
 
 ## Prefetch accuracy
 

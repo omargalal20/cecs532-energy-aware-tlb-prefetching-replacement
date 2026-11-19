@@ -6,15 +6,18 @@ Usage:
         --cacti-csv energy/cacti_per_access.csv \\
         --dram-nj-per-access VALUE --out results/results_table.csv
 
-The CSV must provide read_nj, write_nj, and leakage_mw rows for every active
-on-chip structure. Cache rows are named L1D, L2C, and LLC. The DRAM value is
-the estimated energy of one LLC translation miss (one DRAM read).
+The CSV must provide read_nj, write_nj, and leakage_mw rows for each modeled
+on-chip structure. Cache rows (L1D, L2C, LLC) are optional; missing cache rows
+are excluded and identified in energy_coverage and energy_notes. PSC uses a
+zero lower bound and the existing PQ row (or its PSC_UPPER_PROXY alias) for its
+upper scenario. The DRAM value is the estimated energy of one LLC translation miss.
 
 Counter-to-energy assumptions are recorded in energy_notes. ChampSim does not
 separate TLB lookup writes/fills, so TLB accesses are priced as read-like accesses.
 Current SBFP/ATP logs do not count every FDT read or fake-queue insertion; their
 energy is an estimate based on the available counters, not a complete gate-level
-accounting. A missing CACTI value leaves total energy, energy_vs_lru, and EDP blank.
+accounting. A missing required CACTI value leaves total energy, energy_vs_lru,
+and EDP blank; missing optional cache rows do not block totals but are excluded.
 """
 
 import argparse
@@ -314,27 +317,43 @@ def add_energy(
             )
 
     # PSC CACTI failures are represented as an interval: zero is the lower
-    # bound, while a separately documented PSC_UPPER_PROXY row can supply the
-    # upper bound. If the four geometry-specific rows eventually become
-    # usable, use their sum instead of the generic proxy.
+    # bound, while the PQ row (or its PSC_UPPER_PROXY alias) supplies the upper
+    # bound. If the four geometry-specific rows eventually become usable, use
+    # their sum instead of the generic proxy.
     psc_lower = 0.0
     psc_upper: float | None = None
+    psc_proxy_source: str | None = None
     psc_total_lookups = ptw.get("psc_lookups", 0) or 0
     if all(cacti_ready(cacti, name) for name in PSC_STRUCTURES):
+        psc_proxy_source = "PSC geometry-specific rows"
         psc_parts = [
             component_energy_nj(name, psc_lookups_each, 0, runtime_s, cacti)
             for name in PSC_STRUCTURES
         ]
         if all(value is not None for value in psc_parts):
             psc_upper = sum(value for value in psc_parts if value is not None)
-    elif cacti_ready(cacti, "PSC_UPPER_PROXY"):
+    else:
+        # Use the explicit alias row when present. Until then, PQ itself is the
+        # specified 64-entry, fully associative proxy at the same CACTI node.
+        psc_proxy_source = next(
+            (name for name in ("PSC_UPPER_PROXY", "PQ") if cacti_ready(cacti, name)),
+            None,
+        )
+    if psc_upper is None and psc_proxy_source is not None:
         psc_upper = component_energy_nj(
-            "PSC_UPPER_PROXY", psc_total_lookups, 0, runtime_s, cacti,
+            psc_proxy_source, psc_total_lookups, 0, runtime_s, cacti,
             leakage_instances=len(PSC_STRUCTURES),
         )
 
     dram_energy = None if dram_nj is None else run["llc_translation_misses"] * dram_nj
-    missing = sorted(name for name in active if energies.get(name) is None)
+    missing = sorted(
+        name for name in active
+        if energies.get(name) is None and name not in CACHE_STRUCTURES
+    )
+    missing_caches = sorted(
+        name for name in CACHE_STRUCTURES
+        if name in active and energies.get(name) is None
+    )
     if dram_nj is None:
         missing.append("DRAM")
 
@@ -371,11 +390,16 @@ def add_energy(
     run["energy_nj_upper"] = total_upper
     run["edp"] = total_lower * runtime_s if total_lower is not None else None
     run["edp_upper"] = total_upper * runtime_s if total_upper is not None else None
-    run["energy_coverage"] = (
-        ("PSC range available (0 lower bound; proxy upper bound)"
-         if total_upper is not None else "PSC lower bound only; upper proxy unavailable")
-        if complete_lower else "partial; missing " + ", ".join(missing)
-    )
+    if complete_lower:
+        coverage = (
+            "PSC lower/upper scenarios available (PQ proxy upper bound)"
+            if total_upper is not None else "PSC=0 lower-bound estimate; upper proxy unavailable"
+        )
+    else:
+        coverage = "partial; missing " + ", ".join(missing)
+    if missing_caches:
+        coverage += "; cache energy excluded: " + ", ".join(missing_caches)
+    run["energy_coverage"] = coverage
     notes = []
     if "ATP_FPQ" in active:
         notes.append("ATP_FPQ energy includes 3 queues; writes uncounted and excluded")
@@ -390,12 +414,29 @@ def add_energy(
         cacti_note = (row.get("note") or row.get("notes") or "").strip()
         if cacti_note:
             notes.append(f"{structure}: {cacti_note}")
-    for structure in (*PSC_STRUCTURES, "PSC_UPPER_PROXY"):
+    for structure in (*PSC_STRUCTURES, "PSC_UPPER_PROXY", "PQ"):
         row = cacti.get(structure, {})
         cacti_note = (row.get("note") or row.get("notes") or "").strip()
         if cacti_note:
             notes.append(f"{structure}: {cacti_note}")
-    notes.append("PSC lower bound assumes 0 nJ; upper bound uses PSC_UPPER_PROXY when available")
+    if psc_proxy_source == "PSC geometry-specific rows":
+        psc_upper_note = "upper scenario sums the four geometry-specific CACTI rows"
+    elif psc_proxy_source:
+        psc_upper_note = (
+            "upper scenario uses the 64-entry fully associative, 64 B PQ proxy at the "
+            f"selected node (CACTI row {psc_proxy_source})"
+        )
+    else:
+        psc_upper_note = "upper proxy CACTI value unavailable"
+    notes.append(
+        "PSC lower bound assumes 0 nJ; " + psc_upper_note
+        + "; real PSC geometries (2, 4, 8, and 32 entries) failed in CACTI (exit 139)"
+    )
+    if missing_caches:
+        notes.append(
+            "Cache energy for page-walk accesses is excluded because CACTI rows are unavailable: "
+            + ", ".join(missing_caches)
+        )
     run["energy_notes"] = "; ".join(notes)
 
 

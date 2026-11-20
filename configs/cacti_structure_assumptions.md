@@ -2,8 +2,8 @@
 
 ## Node and entry assumptions
 
-- Final energy-table node: 22 nm, per Sanket's recommendation.
-- 90 nm values are retained as node-sensitivity results; the earlier 90 nm setting came from the CACTI sample config.
+- Final energy-table node: 90 nm, per team agreement.
+- 22 nm values are retained as node-sensitivity results; 90 nm is the agreed final node.
 - Virtual addresses are 64 bits; with 4 KB pages, VPN is 52 bits.
 - PPN is assumed to be 52 bits; physical-address width was not independently verified.
 - Single core and one address space; no CPU-ID or ASID bits.
@@ -17,11 +17,11 @@
 
 The modeled blocks exceed the real entry widths, so the CACTI numbers are labeled proxies and likely overestimate per-access energy. Final runs were executed from the CACTI directory.
 
-- DTLB/ITLB: 128B-block, 16-set, 4-way configs supply the 22 nm CSV values. 64B configs failed with “no valid data array organizations found.” 256B configs provide a geometry sensitivity. The +10 permission-bit configs use a 58-bit tag proxy.
-- PQ: 64B-block config supplies the 22 nm CSV value; 128B provides a geometry sensitivity.
-- SBFP_FDT: modeled as RAM. The 128B-block RAM config supplies the 22 nm CSV value; 64B RAM failed with “no valid data array organizations found.” The 256B RAM config provides a geometry sensitivity.
-- SBFP_SAMPLER: 64B-block config supplies the 22 nm CSV value; 128B provides a geometry sensitivity.
-- ATP_FPQ: one 16-entry queue was modeled with a 64B block. The 22 nm CSV value is per queue; energy accounting must include all three queues. The 128B config provides a geometry sensitivity.
-- The 90 nm same-geometry sensitivity values are recorded in the CSV notes.
-- PSC: see cacti_psc_notes.md. Its rows remain unavailable because CACTI produced no energy values.
+- DTLB/ITLB: 128B-block, 16-set, 4-way configs supply the 90 nm CSV values. 64B configs failed with “no valid data array organizations found.” 256B configs provide a geometry sensitivity. The +10 permission-bit configs use a 58-bit tag proxy.
+- PQ: 64B-block config supplies the 90 nm CSV value; 128B provides a geometry sensitivity.
+- SBFP_FDT: modeled as RAM. The 128B-block RAM config supplies the 90 nm CSV value; 64B RAM failed with “no valid data array organizations found.” The 256B RAM config provides a geometry sensitivity.
+- SBFP_SAMPLER: 64B-block config supplies the 90 nm CSV value; 128B provides a geometry sensitivity.
+- ATP_FPQ: one 16-entry queue was modeled with a 64B block. The 90 nm CSV value is per queue; energy accounting must include all three queues. The 128B config provides a geometry sensitivity.
+- The 22 nm same-geometry sensitivity values are recorded in the CSV notes.
+- PSC: the four real-geometry rows remain unavailable; PSC_UPPER_PROXY is a separate 64-entry, 90 nm upper-bound proxy. See cacti_psc_notes.md.
 - L1D, L2C, and LLC are optional and remain TBD in the CSV.

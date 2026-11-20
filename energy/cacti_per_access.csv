@@ -1,16 +1,17 @@
 structure,read_nj,write_nj,leakage_mw,source,note
-DTLB,0.0306741,0.028906,3.5668,configs/dtlb_16x4_128b_22nm_proxy.cfg,"proxy: 128B block, real entry is 103 bits. 90nm same-geometry sensitivity: read 0.360439 nJ, write 0.335661 nJ, leakage 4.4965 mW. 10-bit permission sensitivity uses 58-bit tag proxy; 22nm result: 0.0307376/0.0290345 nJ, 3.60584 mW."
-ITLB,0.0306741,0.028906,3.5668,configs/itlb_16x4_128b_22nm_proxy.cfg,"proxy: 128B block, real entry is 103 bits. 90nm same-geometry sensitivity: read 0.360439 nJ, write 0.335661 nJ, leakage 4.4965 mW. 10-bit permission sensitivity uses 58-bit tag proxy; 22nm result: 0.0307376/0.0290345 nJ, 3.60584 mW."
+DTLB,0.360439,0.335661,4.4965,configs/dtlb_16x4_128b_proxy.cfg,"proxy: 128B block; real entry 103 bits. 22nm sensitivity: 0.0306741 nJ read, 0.028906 nJ write, 3.5668 mW leakage. Permission sensitivity uses 58-bit tag proxy; 22nm result: 0.0307376/0.0290345 nJ, 3.60584 mW."
+ITLB,0.360439,0.335661,4.4965,configs/itlb_16x4_128b_proxy.cfg,"proxy: 128B block; real entry 103 bits. 22nm sensitivity: 0.0306741 nJ read, 0.028906 nJ write, 3.5668 mW leakage. Permission sensitivity uses 58-bit tag proxy; 22nm result: 0.0307376/0.0290345 nJ, 3.60584 mW."
 STLB,TBD,TBD,TBD,CACTI (Ayushi),
-PQ,0.0167252,0.0186162,6.03405,configs/pq_64_fa_64b_22nm_proxy.cfg,"proxy: 64B block, real entry is 109 bits. 90nm same-geometry sensitivity: read 0.186486 nJ, write 0.207663 nJ, leakage 5.95101 mW."
-SBFP_FDT,0.00748001,0.00825899,0.896309,configs/sbfp_fdt_16x1_128b_ram_22nm_proxy.cfg,"proxy: 128B RAM block, real counter is 10 bits; 14 counters total. 90nm same-geometry sensitivity: read 0.0874022 nJ, write 0.0968997 nJ, leakage 1.16012 mW."
-PSC,TBD,TBD,TBD,CACTI (Ayushi),"Unused legacy aggregate row; energy script uses PSC_1X2, PSC_1X4, PSC_2X4, and PSC_4X8."
+PQ,0.186486,0.207663,5.95101,configs/pq_64_fa_64b_proxy.cfg,"proxy: 64B block; real entry 109 bits. 22nm sensitivity: 0.0167252 nJ read, 0.0186162 nJ write, 6.03405 mW leakage."
+SBFP_FDT,0.0874022,0.0968997,1.16012,configs/sbfp_fdt_16x1_128b_ram_proxy.cfg,"proxy: 128B RAM block; real counter 10 bits, 14 counters total. 22nm sensitivity: 0.00748001 nJ read, 0.00825899 nJ write, 0.896309 mW leakage."
+PSC,TBD,TBD,TBD,CACTI (Ayushi),Unused legacy aggregate row; geometry-specific PSC rows and PSC_UPPER_PROXY are separate.
 PSC_1X2,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md,Unavailable: CACTI produced no energy values; see configs/cacti_psc_notes.md
 PSC_1X4,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md,Unavailable: CACTI produced no energy values; see configs/cacti_psc_notes.md
 PSC_2X4,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md,Unavailable: CACTI produced no energy values; see configs/cacti_psc_notes.md
 PSC_4X8,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md,Unavailable: CACTI produced no energy values; see configs/cacti_psc_notes.md
-SBFP_SAMPLER,0.0167252,0.0186162,6.03405,configs/sbfp_sampler_64_fa_64b_22nm_proxy.cfg,"proxy: 64B block, real entry is 56 bits. 90nm same-geometry sensitivity: read 0.186486 nJ, write 0.207663 nJ, leakage 5.95101 mW."
-ATP_FPQ,0.0165415,0.0168741,4.81067,configs/atp_fpq_16_fa_64b_22nm_proxy.cfg,"proxy: 64B block, real entry is 53 bits; one 16-entry queue modeled. 90nm same-geometry sensitivity: read 0.185085 nJ, write 0.187989 nJ, leakage 4.20669 mW; accounting must include all three queues."
+SBFP_SAMPLER,0.186486,0.207663,5.95101,configs/sbfp_sampler_64_fa_64b_proxy.cfg,"proxy: 64B block; real entry 56 bits. 22nm sensitivity: 0.0167252 nJ read, 0.0186162 nJ write, 6.03405 mW leakage."
+ATP_FPQ,0.185085,0.187989,4.20669,configs/atp_fpq_16_fa_64b_proxy.cfg,"proxy: 64B block; real entry 53 bits; one 16-entry queue modeled. 22nm sensitivity: 0.0165415 nJ read, 0.0168741 nJ write, 4.81067 mW leakage; account for all three queues."
 L1D,TBD,TBD,TBD,CACTI pending,Optional structure; not modeled in this pass
 L2C,TBD,TBD,TBD,CACTI pending,Optional structure; not modeled in this pass
 LLC,TBD,TBD,TBD,CACTI pending,Optional structure; not modeled in this pass
+PSC_UPPER_PROXY,0.186486,0.207663,5.95101,configs/pq_64_fa_64b_proxy.cfg (90 nm),"upper-bound proxy; real PSC geometries (2, 4, 8 and 32 entries) failed in CACTI, exit 139"

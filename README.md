@@ -50,7 +50,7 @@ Both can reduce page walks, but speculative prefetches consume energy and affect
 | `atp_sbfp_pq_itp` | ATP + SBFP with prefetch queue | iTP | Required |
 | `atp` , `atp_itp` | ATP only (no SBFP) | LRU / iTP | Diagnostic: isolates SBFP's contribution |
 | `atp_sbfp` , `atp_sbfp_itp` | ATP + SBFP, free PTEs fill the STLB directly (no prefetch queue) | LRU / iTP | Ablation: shows the cost of STLB pollution |
-| STLB-capacity and page-size sensitivity, 4-core runs | — | — | Stretch |
+| SBFP alone (without ATP), CHiRP, STLB-capacity and page-size sensitivity, 4-core runs | — | — | Stretch goals from the proposal; not done |
 
 **What each policy does, and how it ranks.**
 
@@ -67,9 +67,18 @@ Ranking is by energy versus LRU in the tables under [Results](#results); the exa
 ## Methodology
 
 ```
- trace ──► ChampSim (modified) ──► counters ──┐
-                                              ├──► energy_fusion.py ──► results_table.csv
- CACTI ──► per-access energy, leakage ────────┘                         (speedup, energy, EDP)
+ DPC-3 SPEC / GAP traces
+        │
+        ▼
+ ChampSim (pinned, + iTP / ATP / SBFP modules, walker counters)
+        │   one binary per configuration (configs/*.json)
+        ▼
+ raw outputs: cycles, TLB / walker / ATP / SBFP counters   results/raw*/<config>__<trace>.txt
+        │                                                      ┌──────────────────────────────┐
+        ├──────────────────────────────────────────────────►   │ energy/energy_fusion.py      │
+        │                                                      │ counts × CACTI per-access    │──► speedup, energy, EDP
+ CACTI 90 nm (22 nm sensitivity) ─► energy/cacti_per_access.csv│ + leakage × runtime + DRAM   │    tables and plots
+                                                               └──────────────────────────────┘
 ```
 
 **Simulator.** [ChampSim](https://github.com/ChampSim/ChampSim), pinned to commit `410cee6` (see `scripts/setup.sh`). It models a TLB hierarchy and a hardware page-table walker with page-structure caches. It ships no TLB-specific prefetcher and no iTP, so these are implemented as ChampSim modules in this project.
@@ -103,7 +112,7 @@ CACTI did not directly provide the project's 1,536-entry, 128-set × 12-way STLB
 
 The 2,048-to-1,024 ratios are 2.447 read, 2.538 write, and 2.022 leakage at 90 nm; at 22 nm they are 2.291, 2.274, and 1.949. The ratio shifts at 22 nm are −6.38%, −10.43%, and −3.61%, respectively.
 
-For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et al. [5]. Table 2 reports this value for DDR3 at 1333 MHz with two DIMMs per channel and labels its average-read row as **page-open**: 18 nJ array read + 1 nJ read I/O + 12 nJ additional termination + 25 nJ activate/pre-charge. The paper states that one memory access is 64 bytes and discusses a page-closed policy elsewhere; this README reports the Table 2 row label specifically, without treating it as the paper's general policy assumption. This is a published system estimate, not a measurement of our machine; the project applies it once per LLC `TRANSLATION MISS` counted as one DRAM read.
+For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et al. [5]. Table 2 reports this value for DDR3 at 1333 MHz with two DIMMs per channel and labels its average-read row as **page-closed policy**: 18 nJ array read + 1 nJ read I/O + 12 nJ additional termination + 25 nJ activate/pre-charge. Every access therefore pays for opening and closing a page, so reads that hit an already open page would cost less and 56 nJ leans high. We assume one LLC translation miss is one 64-byte read; the Table 2 caption does not state the access size. The 800 MHz row of the same table is 64.7 nJ, so the value depends on memory frequency. This is a published system estimate, not a measurement of our machine; the project applies it once per LLC `TRANSLATION MISS` counted as one DRAM read.
 
 **Metrics.** IPC and speedup over `baseline_lru`; STLB misses (MPKI); page-walk memory references; prefetch accuracy; estimated translation energy; EDP as a derived comparison.
 
@@ -155,7 +164,7 @@ For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et a
 - None of the 14 traces has substantial instruction pressure on the STLB (maximum 7.7%), and the three mcf traces have none. iTP can therefore only be tested meaningfully on `620.omnetpp_s-874B` (weakly on `471.omnetpp-188B`), so iTP results should be read with this in mind.
 - We have not investigated why the traces differ in STLB behaviour; the table reports measurements only.
 - GAP (graph) was successfully screened using ChampSim; they show substantial STLB activity but 0% instruction share.
-- XSBench (scientific proxy) traces may stress the TLB more, but their availability in ChampSim format is not verified.
+- XSBench (scientific proxy) traces are listed in the same Zenodo record as the GAP traces (four inputs). We have not downloaded or run them.
 
 **Reproducing a row.** Download the trace from the DPC-3 server into `traces/` (sources and the screening steps for new traces are in [docs/trace-sources.md](docs/trace-sources.md)), then run `scripts/run_baseline.sh traces/<trace>.champsimtrace.xz 10 20`. The raw output goes to `results/raw/baseline_lru__<trace>.txt`. The MPKI, latency and instruction share are computed from the `STLB`, `DTLB` and `ITLB` lines of that file.
 
@@ -460,9 +469,26 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 | Proposal | Complete |
 | Repository, build, baseline run and trace screening | Complete (14 traces screened, 3 selected) |
 | ATP/SBFP and iTP implementation, counters | Complete; all configurations run on the three selected traces (10M + 20M, and 20M + 100M for the four required configurations) |
-| CACTI models of TLB, PQ and SBFP structures | Complete at 90 nm with proxies (PSC unavailable, cache rows not modeled); see Limitations |
+| CACTI models of TLB, PQ and SBFP structures | Complete at 90 nm with proxies (PSC unavailable); L1D, L2C and LLC added as a dynamic-only sensitivity; see Limitations |
 | Full experiment set and energy fusion | Complete: speed and estimated energy for SPEC (100M and 10M + 20M) and GAP (100M) |
-| Final report | Not started |
+| Stretch goals (SBFP alone, CHiRP, 4-core, STLB and page-size sweeps) | Not done |
+| Final report | Tracked outside this repository |
+
+## Decisions
+
+| Decision | Outcome and reason |
+|---|---|
+| iTP without xPTP | Only the STLB replacement part of the ASPLOS 2025 design is implemented; xPTP is not. The paper says iTP alone raises data STLB misses, which our SPEC results show. |
+| Where free (SBFP) prefetches go | Required configurations use a separate 64-entry prefetch queue in the walker, as in the paper. Direct fill into the STLB is kept as an ablation because it pollutes the STLB (up to +43% energy at 10M + 20M). |
+| Traces | Three SPEC traces (`429.mcf-51B`, `620.omnetpp_s-874B`, `623.xalancbmk_s-700B`) and three GAP traces (`bc.kron-2608B`, `bc.road-131B`, `bc.twitter-1658B`), chosen by STLB MPKI screening. See Trace selection. |
+| Measurement window | 20M warmup + 100M simulated for the four required configurations; 10M + 20M for the ablations. Short windows can mislead (iTP on `623.xalancbmk_s-700B`: −0.3% at 20M, −2.1% at 100M). |
+| Energy node | 90 nm for all tables; 22 nm values kept as sensitivity (team decision). |
+| 1536-entry STLB | CACTI needs powers of two, so the value is the linear midpoint of the 1024- and 2048-entry runs. |
+| Small structures | CACTI cannot build entries as small as ours, so 64 B or 128 B block proxies are used. This overestimates energy and leakage of the prefetch structures. |
+| Page-structure caches | Reported as a range (0, and a 64-entry proxy) because CACTI failed on all four geometries. |
+| DRAM energy | 56 nJ per LLC translation miss (David et al., Table 2). An estimate, not a measurement. |
+| L1D, L2C and LLC energy | Left out of the main tables because the proposal scopes CACTI to TLB and queue arrays; reported separately as a dynamic-only sensitivity. |
+| Stretch goals | SBFP alone, CHiRP, 4-core runs and STLB and page-size sweeps are not done. |
 
 ## Validity and limits
 

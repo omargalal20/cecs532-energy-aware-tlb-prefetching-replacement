@@ -17,7 +17,9 @@ This repository contains the simulation infrastructure and results for a trace-d
 
 We answer it by simulating a baseline (LRU replacement, no TLB prefetching), ATP/SBFP, iTP and their combination in ChampSim. Speedup and estimated energy are compared to identify Pareto-optimal configurations.
 
-**Expected outcome (hypotheses, not results).** The trade-off should vary by workload: aggressive prefetching should raise speed but also energy on irregular workloads, and free prefetching (SBFP) should be among the most efficient. The experiments may instead show one policy to be best on both measures, which is also a useful result.
+**Hypotheses (stated before the experiments).** The trade-off should vary by workload: aggressive prefetching should raise speed but also energy on irregular workloads, and free prefetching (SBFP) should be among the most efficient. The experiments may instead show one policy to be best on both measures, which is also a useful result.
+
+**Outcome (100M-instruction runs, six traces).** The energy half of the hypothesis holds: prefetching raises estimated energy by 4% to 15% on every trace. The speed half mostly does not: ATP+SBFP is within about 0.1% of LRU on five traces and gains 2.0% on `bc.twitter-1658B`. Free prefetching (SBFP) was expected to be among the most efficient, but it is not: it costs energy and saves almost no time here. No policy beats LRU on both measures on SPEC. On GAP, iTP is marginally ahead of LRU on energy (0.1% to 0.5% lower) with speed within 0.2%. The fastest policy is never the lowest-energy one. See [Answers to the objectives](#answers-to-the-objectives).
 
 ## Background
 
@@ -25,6 +27,16 @@ Every memory access needs a virtual-to-physical translation. Translations are ca
 
 - **Agile TLB Prefetching (ATP) with Sampling-Based Free TLB Prefetching (SBFP).** ATP selects among several TLB prefetchers at run time. SBFP exploits the fact that a page-table walk fetches a cache line holding neighbouring PTEs and keeps the useful ones as "free" prefetches [1].
 - **iTP (instruction-aware STLB replacement).** iTP biases STLB replacement toward instruction translations, which are more costly to miss, and is designed to cooperate with cache replacement [2].
+
+| Term | Meaning |
+|---|---|
+| STLB | Second-level (shared) TLB. A miss here starts a page-table walk. |
+| Page walk | Hardware lookup of the page table in memory after an STLB miss. |
+| PSC | Page-structure cache: caches upper page-table levels to shorten walks. |
+| MPKI | Misses per thousand instructions. |
+| Speedup | Cycles of `baseline_lru` divided by cycles of the configuration. |
+| EDP | Energy-delay product: energy times runtime. Lower is better. |
+| Pareto-optimal | No other configuration is both faster and lower-energy. |
 
 Both can reduce page walks, but speculative prefetches consume energy and affect which translations remain in the STLB. Published TLB work mostly reports speedup, and energy is evaluated for only some designs; the ISCA 2021 paper estimates energy with CACTI for its prefetcher [1]. This project compares the policies in one common setup, with speed and estimated energy side by side. Our implementations are simplified versions of the published designs, and every simplification is documented alongside the code.
 
@@ -39,6 +51,18 @@ Both can reduce page walks, but speculative prefetches consume energy and affect
 | `atp` , `atp_itp` | ATP only (no SBFP) | LRU / iTP | Diagnostic: isolates SBFP's contribution |
 | `atp_sbfp` , `atp_sbfp_itp` | ATP + SBFP, free PTEs fill the STLB directly (no prefetch queue) | LRU / iTP | Ablation: shows the cost of STLB pollution |
 | STLB-capacity and page-size sensitivity, 4-core runs | — | — | Stretch |
+
+**What each policy does, and how it ranks.**
+
+| Policy | Mechanism | Effect measured here | Energy rank (1 = lowest) |
+|---|---|---|---|
+| `baseline_lru` | Evict the least recently used STLB entry; no prefetching | Reference | 1 (tied with iTP) |
+| `itp` | Instruction translations are kept longer; data translations are inserted near the eviction end (no xPTP) | Data page walks rise (+20% to +121% on SPEC, 0% to +11% on GAP), so SPEC is slower (−0.3% to −2.1%); GAP speed within +0.2% | 1 (+0.2% on SPEC; −0.5% to −0.1% on GAP) |
+| `atp_sbfp_pq` | ATP predicts future pages; SBFP keeps useful neighbour PTEs from each walk in a separate 64-entry queue, so the STLB is not polluted | Walks −5% to −38% except `bc.kron-2608B` (0%); speed within about 0.1% except +2.0% on `bc.twitter-1658B` | 2 (+4% to +14%) |
+| `atp_sbfp_pq_itp` | Both | iTP's extra data walks partly cancel the queue's savings on SPEC; on GAP about the same as `atp_sbfp_pq` | 3 on SPEC (+5% to +15%); about tied with 2 on GAP |
+| `atp_sbfp`, `atp_sbfp_itp` | Free PTEs fill the STLB directly | Pollutes the STLB; at 10M + 20M the worst energy (up to +43% on `429.mcf-51B`) | 4 (SPEC 10M + 20M only) |
+
+Ranking is by energy versus LRU in the tables under [Results](#results); the exact values are there.
 
 ## Methodology
 
@@ -356,7 +380,34 @@ Same method and scenarios as the SPEC energy table above.
 - iTP is energy-neutral on these traces. On `bc.road-131B` it is slightly faster (+0.2%) and slightly lower in energy (0.995x), so it is the only configuration that improves both measures there. This is a small effect that we have not explained.
 - As with SPEC, the fastest configuration (`atp_sbfp_pq_itp` on `bc.twitter-1658B` and `bc.road-131B`) is not the lowest-energy one.
 
-**Still to come:** a workload-type tag for each trace (objective 3).
+### Answers to the objectives
+
+**Objective 1 (speedup and energy per configuration).** See the tables above. In short, `baseline_lru` and `itp` cost the least energy; `atp_sbfp_pq` and `atp_sbfp_pq_itp` cost 4% to 15% more.
+
+**Objective 2 (Pareto-optimal configurations).** Each panel is one trace; dots are configurations; outlined dots joined by a dashed line are Pareto-optimal. Note the y-axis of each panel is zoomed: speed differences are mostly under 1%.
+
+![Speed versus estimated energy, per trace](docs/figures/analysis/pareto_per_trace.png)
+
+Because energy is lowest for LRU or iTP and speed is highest for a prefetching configuration, the frontier is a short trade-off between those two ends on most traces. Which end is on the frontier depends on the trace, so the speed gain must be weighed against its energy cost. Where the gain is under 0.1% (SPEC, `bc.kron-2608B`) the energy cost is not repaid.
+
+**Why prefetching costs energy.** The bars show where estimated energy goes. The red slice is the prefetch structures (prefetch queue, sampler, free-distance table, fake queues). The green slice (DRAM page-walk reads) barely shrinks even when walks drop, because the saved walks mostly hit in caches whose energy is not modeled here (see Limitations).
+
+![Energy breakdown by structure](docs/figures/analysis/energy_breakdown.png)
+
+**Objective 3 (workload types).** All six traces are irregular (STLB MPKI of at least 1.7 under LRU), so we cannot compare irregular against regular access patterns; this is a stated limitation. Within the traces we have, behaviour separates by how much reuse the STLB captures under LRU:
+
+![STLB reuse and policy effect on page walks](docs/figures/analysis/spec_vs_gap.png)
+
+- SPEC traces (`429.mcf-51B`, `620.omnetpp_s-874B`, `623.xalancbmk_s-700B`) have STLB demand miss ratios of 14%, 21% and 6%, so there is reuse for the replacement policy to disturb: iTP changes page walks by +20% to +121% and slows execution.
+- `bc.kron-2608B` and `bc.twitter-1658B` miss on 98% of STLB demand lookups, so replacement has almost nothing to act on (iTP changes walks by about 0%). `bc.road-131B` is in between (56%).
+- ATP+SBFP removes the most walks on `bc.road-131B` (−38%, speed +0.1%) and `bc.twitter-1658B` (−19%, speed +2.0%). Why `bc.kron-2608B` shows no change under ATP+SBFP is not established by our data.
+- Reading the miss ratios as thrashing versus reuse is our interpretation; we did not run an experiment that isolates it. The instruction share of the SPEC traces is small (about 0% for `429.mcf-51B`, about 1.6% for `623.xalancbmk_s-700B`), which is consistent with iTP's data-side cost being visible, but we did not test that link.
+
+### Consistency with published work
+
+- ISCA 2021 (ATP/SBFP) [1] reports larger speedups and walk reductions than we measure, and an energy reduction (we could not verify its energy figures), whereas we measure a small speedup and an energy increase. We have not reproduced its setup (traces, workloads, hardware parameters) and our implementation is simplified, so we do not claim the paper is wrong. We could verify only part of the paper text, so we do not quote its numbers here. The shared observation is that irregular workloads are where ATP matters and that throttling keeps it quiet on some.
+- ASPLOS 2025 (iTP) [2] states that iTP alone raises data STLB misses and that xPTP is designed to fix this; we do not implement xPTP. Its evaluation targets 120 server traces with STLB MPKI of at least 1.0 and shows SPEC only in motivation, so our data-heavy traces are outside what it evaluates. Our slowdown on SPEC is therefore consistent with its stated limits, not a contradiction. It reports no energy results.
+- To our knowledge, no published work compares TLB prefetching and STLB replacement policies on energy in one setup; we found only energy work on TLB organisation (for example Karakostas et al., HPCA 2016), which finds that L1 TLBs dominate dynamic translation energy. That agrees with the DTLB/ITLB share in our breakdown.
 
 ## Project Status
 
@@ -369,12 +420,25 @@ Same method and scenarios as the SPEC energy table above.
 | Full experiment set and energy fusion | Complete: speed and estimated energy for SPEC (100M and 10M + 20M) and GAP (100M) |
 | Final report | Not started |
 
+## Validity and limits
+
+**What was checked.**
+- Every number in the README tables was recomputed from the raw simulator outputs in `results/raw*/` by an independent script (204 values, 0 mismatches). The GAP speedups also match the 100M tables our simulation owner reported separately.
+- The simulator is deterministic, so a repeated run gives the same counters.
+
+**What this does not establish.**
+- The recompute uses the same energy formulas as `energy_fusion.py`; it catches arithmetic and parsing mistakes, not modelling mistakes in the formulas.
+- The size of the energy overhead depends on CACTI proxies and the 90 nm node; the sign (prefetching costs energy) holds in all our variants (dynamic-only, 22 nm).
+- All six traces are irregular. No regular-access trace has been run, so objective 3 is only partly answered.
+- Energy of L1D, L2C and LLC accesses made by page walks is excluded (CACTI rows TBD), so savings from avoided walks in those caches are not credited to the prefetching configurations. This biases results against prefetching by an amount we have not measured.
+- Windows are 100M instructions. Phase effects matter (see the iTP result on `623.xalancbmk_s-700B`).
+
 ## Limitations
 
 - ATP/SBFP and iTP are simplified re-implementations, not the authors' code.
 - CACTI requires power-of-two array sizes; the STLB is approximated.
 - Energy covers translation-related structures and page-walk memory references only, not whole-core energy.
-- Results come from a limited trace set and single-core runs unless the stretch goals are reached.
+- Results come from six traces and single-core runs unless the stretch goals are reached. All six are irregular; no regular-access workload (for example the proposal's XSBench) has been run, so objective 3 is only partly answered.
 - Short measurement windows. The iTP slowdown on `623.xalancbmk_s-700B` is 0.3% at 20M instructions and 2.1% at 100M, so results depend on which part of the trace is measured.
 - Details the papers do not state, which we had to assume (marked `ASSUMPTION` or `assumed` in the code):
   - SBFP: free-distance counters start at 0; a Sampler entry is removed when it hits; the prefetch queue is FIFO and an entry is removed when it hits; free neighbours are looked up when the page walk completes, and only neighbours that are already mapped are prefetched.

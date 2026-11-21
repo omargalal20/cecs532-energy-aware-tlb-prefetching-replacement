@@ -284,7 +284,46 @@ Measured on single-core ChampSim, 20M warmup + 100M simulated instructions, for 
 ![Page walks relative to baseline_lru](docs/figures/spec/page_walks.png)
 ![STLB MPKI](docs/figures/spec/stlb_mpki.png)
 
-The Pareto plot (speedup against estimated translation energy) will be added once the energy columns are filled.
+The 100M table above still shows `TBD` for energy and EDP. Energy was computed on the 10M warmup + 20M simulated runs for all eight configurations (next section); the 100M SPEC energy table replaces it once those raw files are processed.
+
+### Estimated translation energy (SPEC, 10M + 20M, all eight configurations)
+
+Energy is `energy/energy_fusion.py` applied to the raw outputs, with CACTI 7 at 90 nm (see [docs/energy-accounting.md](docs/energy-accounting.md)). Two scenarios are shown because CACTI could not model the page-structure caches (PSC): the first number sets PSC energy to 0 (lower bound), the second prices every PSC lookup with the 64-entry fully associative PQ proxy (upper bound). Both ratios are against `baseline_lru` under the same scenario. Cache (L1D, L2C, LLC) energy for page-walk accesses is not included, and the small structures use oversized CACTI proxies (see Limitations), so read the sizes as estimates. EDP is energy times runtime, relative to LRU (PSC = 0 scenario).
+
+| Trace | Config | Speedup vs LRU | Energy vs LRU (PSC 0 / PSC proxy) | EDP vs LRU |
+|---|---|---|---|---|
+| `429.mcf-51B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
+|  | `itp` | 0.9924 | 1.002 / 1.014 | 1.010 |
+|  | `atp_sbfp_pq` | 1.0006 | 1.105 / 1.096 | 1.105 |
+|  | `atp_sbfp_pq_itp` | 0.9938 | 1.139 / 1.137 | 1.146 |
+|  | `atp` | 1.0000 | 1.046 / 1.042 | 1.046 |
+|  | `atp_itp` | 0.9924 | 1.058 / 1.066 | 1.066 |
+|  | `atp_sbfp` | 1.0008 | 1.164 / 1.150 | 1.163 |
+|  | `atp_sbfp_itp` | 0.9872 | 1.432 / 1.420 | 1.450 |
+| `620.omnetpp_s-874B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
+|  | `itp` | 0.9964 | 1.003 / 1.005 | 1.006 |
+|  | `atp_sbfp_pq` | 1.0002 | 1.074 / 1.069 | 1.073 |
+|  | `atp_sbfp_pq_itp` | 0.9976 | 1.081 / 1.078 | 1.083 |
+|  | `atp` | 1.0000 | 1.032 / 1.030 | 1.032 |
+|  | `atp_itp` | 0.9964 | 1.036 / 1.037 | 1.040 |
+|  | `atp_sbfp` | 0.9983 | 1.090 / 1.085 | 1.092 |
+|  | `atp_sbfp_itp` | 0.9969 | 1.127 / 1.122 | 1.130 |
+| `623.xalancbmk_s-700B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
+|  | `itp` | 0.9969 | 1.001 / 1.002 | 1.004 |
+|  | `atp_sbfp_pq` | 1.0005 | 1.038 / 1.037 | 1.038 |
+|  | `atp_sbfp_pq_itp` | 0.9980 | 1.040 / 1.040 | 1.043 |
+|  | `atp` | 1.0000 | 1.018 / 1.017 | 1.018 |
+|  | `atp_itp` | 0.9969 | 1.019 / 1.020 | 1.023 |
+|  | `atp_sbfp` | 0.9893 | 1.063 / 1.064 | 1.075 |
+|  | `atp_sbfp_itp` | 0.9933 | 1.050 / 1.051 | 1.057 |
+
+![Speedup against estimated energy, SPEC](docs/figures/spec/pareto_20M.png)
+
+**What the energy numbers show (preliminary, 20M window).**
+- `baseline_lru` has the lowest energy on every trace. iTP costs about the same energy as LRU (+0.1% to +0.3%) but is slower, so it is not on the speed-energy frontier here.
+- The prefetching configurations cost more energy (+4% to +11% for `atp_sbfp_pq`, up to +43% for `atp_sbfp_itp` on `429.mcf-51B`) for at most +0.1% speed. Direct-fill SBFP adds extra STLB fill traffic, which is why `atp_sbfp` and `atp_sbfp_itp` cost the most; the separate prefetch queue avoids that.
+- On every trace the fastest configuration is not the lowest-energy one (on `429.mcf-51B`, `atp_sbfp` is fastest at 1.0008 and costs 1.164x LRU energy).
+- Part of the prefetch overhead is leakage of the prefetch-queue, sampler and fake-queue arrays, which the 64-byte CACTI proxy makes larger than real 53 to 109 bit entries. The size of the overhead is therefore an upper estimate; the direction is consistent across the three traces.
 
 **What the measurements show so far (speed only).**
 - iTP is slower than LRU on all three traces and increases page walks. Its data-translation insertion policy is a poor fit for traces with little instruction share (`429.mcf-51B` has none).
@@ -320,7 +359,32 @@ The Pareto plot (speedup against estimated translation energy) will be added onc
 - The window changes the absolute numbers: `bc.twitter-1658B` baseline STLB MPKI is 9.55 at 100M but 18.70 in the 20M screening window, so the two windows cover different phases. The ranking of configurations is the same.
 - The STLB MPKI column includes prefetch accesses, so use page walks to compare.
 
-**Still to come:** energy and EDP per configuration, the Pareto comparison, Each trace will be tagged with a workload type for objective 3.
+### Estimated translation energy (GAP, 20M + 100M, four required configurations)
+
+Same method and scenarios as the SPEC energy table above.
+
+| Trace | Config | Speedup vs LRU | Energy vs LRU (PSC 0 / PSC proxy) | EDP vs LRU |
+|---|---|---|---|---|
+| `bc.kron-2608B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
+|  | `itp` | 0.9999 | 0.999 / 0.999 | 0.999 |
+|  | `atp_sbfp_pq` | 1.0000 | 1.089 / 1.084 | 1.088 |
+|  | `atp_sbfp_pq_itp` | 0.9999 | 1.087 / 1.083 | 1.087 |
+| `bc.road-131B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
+|  | `itp` | 1.0020 | 0.995 / 0.997 | 0.993 |
+|  | `atp_sbfp_pq` | 1.0011 | 1.137 / 1.117 | 1.135 |
+|  | `atp_sbfp_pq_itp` | 1.0031 | 1.135 / 1.117 | 1.131 |
+| `bc.twitter-1658B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
+|  | `itp` | 1.0000 | 0.999 / 0.999 | 0.999 |
+|  | `atp_sbfp_pq` | 1.0202 | 1.109 / 1.097 | 1.087 |
+|  | `atp_sbfp_pq_itp` | 1.0223 | 1.105 / 1.094 | 1.081 |
+
+![Speedup against estimated energy, GAP](docs/figures/gap/pareto.png)
+
+- Prefetching costs +9% to +14% energy on all three traces. On `bc.twitter-1658B` it buys +2.0% to +2.2% speed, so EDP is still 8% to 9% worse than LRU; on `bc.kron-2608B` and `bc.road-131B` it buys almost nothing.
+- iTP is energy-neutral on these traces. On `bc.road-131B` it is slightly faster (+0.2%) and slightly lower in energy (0.995x), so it is the only configuration that improves both measures there. This is a small effect that we have not explained.
+- As with SPEC, the fastest configuration (`atp_sbfp_pq_itp` on `bc.twitter-1658B` and `bc.road-131B`) is not the lowest-energy one.
+
+**Still to come:** the 100M SPEC energy table, and a workload-type tag for each trace (objective 3).
 
 ## Project Status
 
@@ -329,8 +393,8 @@ The Pareto plot (speedup against estimated translation energy) will be added onc
 | Proposal | Complete |
 | Repository, build, baseline run and trace screening | Complete (14 traces screened, 3 selected) |
 | ATP/SBFP and iTP implementation, counters | Complete; all configurations run on the three selected traces (10M + 20M, and 20M + 100M for the four required configurations) |
-| CACTI models of TLB, PQ and SBFP structures | In progress |
-| Full experiment set and energy fusion | Speed results complete; energy columns waiting on CACTI values and the fusion-script update |
+| CACTI models of TLB, PQ and SBFP structures | Complete at 90 nm with proxies (PSC unavailable, cache rows not modeled); see Limitations |
+| Full experiment set and energy fusion | Speed results complete; energy computed for SPEC (10M + 20M) and GAP (100M); SPEC 100M energy table pending |
 | Final report | Not started |
 
 ## Limitations
@@ -344,7 +408,13 @@ The Pareto plot (speedup against estimated translation energy) will be added onc
   - SBFP: free-distance counters start at 0; a Sampler entry is removed when it hits; the prefetch queue is FIFO and an entry is removed when it hits; free neighbours are looked up when the page walk completes, and only neighbours that are already mapped are prefetched.
   - ATP: the three selection counters start at 128, 32 and 2; the MASP table has 64 entries with LRU replacement.
   - iTP: the 3-bit frequency counter saturates at 7. N=4 and M=8 are the paper's values.
-- Energy inputs are approximations: CACTI uses a 64-byte block as a proxy for a TLB entry and a technology node (90 nm) taken from CACTI's sample configuration, and the page-walk DRAM energy is an estimate, not a measurement.
+- Energy inputs are approximations:
+  - CACTI cannot build arrays as small as our entries, so DTLB, ITLB, PQ, SBFP sampler, SBFP free-distance table and ATP fake queues use 64 B or 128 B block proxies for 53 to 109 bit entries; their energy and leakage are upper estimates.
+  - The 1536-entry STLB is a linear midpoint of CACTI runs at 1024 and 2048 entries.
+  - All four page-structure cache (PSC) geometries failed in CACTI (exit 139), so PSC energy is reported as a range: 0, and the 64-entry fully associative PQ proxy as an upper bound.
+  - L1D, L2C and LLC energy for page-walk accesses is not modeled (the proposal scopes CACTI to the TLB and prefetch-queue arrays); DRAM energy is counted per LLC translation miss.
+  - 90 nm is the main node (22 nm values are kept as a sensitivity in `energy/cacti_per_access.csv`); the page-walk DRAM energy is 56 nJ per 64-byte read from David et al., ICAC 2011, Table 2 (DDR3-1333), an estimate and not a measurement.
+  - Not counted because the logs do not expose them: ATP fake-queue insertions and read-only SBFP free-distance-table probes.
 
 ## References
 

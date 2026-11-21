@@ -380,6 +380,50 @@ Same method and scenarios as the SPEC energy table above.
 - iTP is energy-neutral on these traces. On `bc.road-131B` it is slightly faster (+0.2%) and slightly lower in energy (0.995x), so it is the only configuration that improves both measures there. This is a small effect that we have not explained.
 - As with SPEC, the fastest configuration (`atp_sbfp_pq_itp` on `bc.twitter-1658B` and `bc.road-131B`) is not the lowest-energy one.
 
+### Cache-energy sensitivity (L1D, L2C, LLC energy for page-walk accesses)
+
+The main tables above exclude the energy of page-walk accesses served by L1D, L2C and LLC. This sensitivity adds it, using CACTI at 90 nm with ChampSim's cache sizes (L1D 48 KB 12-way, L2C 512 KB 8-way, LLC 2 MB 16-way; `energy/cacti_with_caches.csv`, configs `configs/*_cache.cfg`). CACTI cannot build the 12-way 48 KB L1D, so its per-access energy is the linear midpoint (assumed) of 32 KB 8-way and 64 KB 16-way runs. Only dynamic energy of translation accesses is charged (no cache leakage, which is shared by all configurations and not specific to translation). Reproduce with `python3 energy/energy_fusion.py results/raw_20_100/*.txt --cacti-csv energy/cacti_with_caches.csv`. All other inputs are unchanged. 100M window.
+
+SPEC:
+
+| Trace | Config | Speedup vs LRU | Energy vs LRU (PSC 0 / proxy) | EDP vs LRU |
+|---|---|---|---|---|
+| `429.mcf-51B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
+|  | `itp` | 0.9923 | 1.065 / 1.072 | 1.073 |
+|  | `atp_sbfp_pq` | 1.0008 | 1.097 / 1.088 | 1.096 |
+|  | `atp_sbfp_pq_itp` | 0.9937 | 1.184 / 1.179 | 1.191 |
+| `620.omnetpp_s-874B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
+|  | `itp` | 0.9972 | 1.009 / 1.010 | 1.011 |
+|  | `atp_sbfp_pq` | 1.0003 | 1.068 / 1.064 | 1.068 |
+|  | `atp_sbfp_pq_itp` | 0.9981 | 1.082 / 1.079 | 1.084 |
+| `623.xalancbmk_s-700B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
+|  | `itp` | 0.9793 | 1.029 / 1.035 | 1.051 |
+|  | `atp_sbfp_pq` | 1.0002 | 1.036 / 1.035 | 1.036 |
+|  | `atp_sbfp_pq_itp` | 0.9804 | 1.074 / 1.077 | 1.095 |
+
+GAP:
+
+| Trace | Config | Speedup vs LRU | Energy vs LRU (PSC 0 / proxy) | EDP vs LRU |
+|---|---|---|---|---|
+| `bc.kron-2608B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
+|  | `itp` | 0.9999 | 0.999 / 0.999 | 0.999 |
+|  | `atp_sbfp_pq` | 1.0000 | 1.075 / 1.072 | 1.075 |
+|  | `atp_sbfp_pq_itp` | 0.9999 | 1.075 / 1.072 | 1.075 |
+| `bc.road-131B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
+|  | `itp` | 1.0020 | 1.000 / 1.001 | 0.998 |
+|  | `atp_sbfp_pq` | 1.0011 | 1.108 / 1.092 | 1.107 |
+|  | `atp_sbfp_pq_itp` | 1.0031 | 1.110 / 1.096 | 1.107 |
+| `bc.twitter-1658B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
+|  | `itp` | 1.0000 | 0.999 / 0.999 | 0.999 |
+|  | `atp_sbfp_pq` | 1.0202 | 1.092 / 1.083 | 1.071 |
+|  | `atp_sbfp_pq_itp` | 1.0223 | 1.090 / 1.081 | 1.066 |
+
+What changes compared with the main tables:
+- Prefetching still costs energy on every trace (+3.6% to +10.8% for `atp_sbfp_pq`, +7% to +18% with iTP). The direction of the main result is unchanged.
+- iTP is no longer energy-neutral on SPEC (+0.9% to +6.5%): its extra page walks now pay for the cache accesses they cause. On `bc.road-131B` its small energy advantage disappears (1.000).
+- Cache energy is 3% to 15% of the total under LRU, so the energy overhead of `atp_sbfp_pq` shrinks slightly (for example `bc.road-131B` 1.137 to 1.108) because saved walks now save cache accesses too.
+- The ranking is now LRU < iTP < ATP+SBFP < ATP+SBFP+iTP on SPEC and LRU ≈ iTP < ATP+SBFP ≈ ATP+SBFP+iTP on GAP; the fastest configuration is still not the lowest-energy one.
+
 ### Answers to the objectives
 
 **Objective 1 (speedup and energy per configuration).** See the tables above. In short, `baseline_lru` and `itp` cost the least energy; `atp_sbfp_pq` and `atp_sbfp_pq_itp` cost 4% to 15% more.
@@ -430,7 +474,7 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 - The recompute uses the same energy formulas as `energy_fusion.py`; it catches arithmetic and parsing mistakes, not modelling mistakes in the formulas.
 - The size of the energy overhead depends on CACTI proxies and the 90 nm node; the sign (prefetching costs energy) holds in all our variants (dynamic-only, 22 nm).
 - All six traces are irregular. No regular-access trace has been run, so objective 3 is only partly answered.
-- Energy of L1D, L2C and LLC accesses made by page walks is excluded (CACTI rows TBD), so savings from avoided walks in those caches are not credited to the prefetching configurations. This biases results against prefetching by an amount we have not measured.
+- The main tables exclude energy of L1D, L2C and LLC accesses made by page walks. The [cache-energy sensitivity](#cache-energy-sensitivity-l1d-l2c-llc-energy-for-page-walk-accesses) adds it (dynamic only, L1D value interpolated): the prefetching overhead shrinks by up to 3 points and iTP stops being energy-neutral on SPEC, but the ranking of the required configurations does not change.
 - Windows are 100M instructions. Phase effects matter (see the iTP result on `623.xalancbmk_s-700B`).
 
 ## Limitations
@@ -448,7 +492,7 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
   - CACTI cannot build arrays as small as our entries, so DTLB, ITLB, PQ, SBFP sampler, SBFP free-distance table and ATP fake queues use 64 B or 128 B block proxies for 53 to 109 bit entries; their energy and leakage are upper estimates.
   - The 1536-entry STLB is a linear midpoint of CACTI runs at 1024 and 2048 entries.
   - All four page-structure cache (PSC) geometries failed in CACTI (exit 139), so PSC energy is reported as a range: 0, and the 64-entry fully associative PQ proxy as an upper bound.
-  - L1D, L2C and LLC energy for page-walk accesses is not modeled (the proposal scopes CACTI to the TLB and prefetch-queue arrays); DRAM energy is counted per LLC translation miss.
+  - L1D, L2C and LLC energy for page-walk accesses is not in the main tables (the proposal scopes CACTI to the TLB and prefetch-queue arrays); it is reported separately as a dynamic-only sensitivity, with an interpolated L1D value. DRAM energy is counted per LLC translation miss.
   - 90 nm is the main node (22 nm values are kept as a sensitivity in `energy/cacti_per_access.csv`); the page-walk DRAM energy is 56 nJ per 64-byte read from David et al., ICAC 2011, Table 2 (DDR3-1333), an estimate and not a measurement.
   - Not counted because the logs do not expose them: ATP fake-queue insertions and read-only SBFP free-distance-table probes.
 

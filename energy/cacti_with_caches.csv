@@ -1,0 +1,17 @@
+structure,read_nj,write_nj,leakage_mw,source,note
+DTLB,0.360439,0.335661,4.4965,configs/dtlb_16x4_128b_proxy.cfg,"proxy: 128B block; real entry 103 bits. 22nm sensitivity: 0.0306741 nJ read, 0.028906 nJ write, 3.5668 mW leakage. Permission sensitivity uses 58-bit tag proxy; 22nm result: 0.0307376/0.0290345 nJ, 3.60584 mW."
+ITLB,0.360439,0.335661,4.4965,configs/itlb_16x4_128b_proxy.cfg,"proxy: 128B block; real entry 103 bits. 22nm sensitivity: 0.0306741 nJ read, 0.028906 nJ write, 3.5668 mW leakage. Permission sensitivity uses 58-bit tag proxy; 22nm result: 0.0307376/0.0290345 nJ, 3.60584 mW."
+STLB,1.3166715,1.3557765,46.75765,docs/cacti-sensitivity.md,"90 nm CACTI estimate: linear midpoint (assumed) between 1024- and 2048-entry runs; 22 nm sensitivity in docs/cacti-sensitivity.md"
+PQ,0.186486,0.207663,5.95101,configs/pq_64_fa_64b_proxy.cfg,"proxy: 64B block; real entry 109 bits. 22nm sensitivity: 0.0167252 nJ read, 0.0186162 nJ write, 6.03405 mW leakage."
+SBFP_FDT,0.0874022,0.0968997,1.16012,configs/sbfp_fdt_16x1_128b_ram_proxy.cfg,"proxy: 128B RAM block; real counter 10 bits, 14 counters total. 22nm sensitivity: 0.00748001 nJ read, 0.00825899 nJ write, 0.896309 mW leakage."
+PSC,TBD,TBD,TBD,CACTI (Ayushi),Unused legacy aggregate row; geometry-specific PSC rows and PSC_UPPER_PROXY are separate.
+PSC_1X2,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md,Unavailable: CACTI produced no energy values; see configs/cacti_psc_notes.md
+PSC_1X4,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md,Unavailable: CACTI produced no energy values; see configs/cacti_psc_notes.md
+PSC_2X4,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md,Unavailable: CACTI produced no energy values; see configs/cacti_psc_notes.md
+PSC_4X8,TBD,TBD,TBD,CACTI unavailable; see configs/cacti_psc_notes.md,Unavailable: CACTI produced no energy values; see configs/cacti_psc_notes.md
+SBFP_SAMPLER,0.186486,0.207663,5.95101,configs/sbfp_sampler_64_fa_64b_proxy.cfg,"proxy: 64B block; real entry 56 bits. 22nm sensitivity: 0.0167252 nJ read, 0.0186162 nJ write, 6.03405 mW leakage."
+ATP_FPQ,0.185085,0.187989,4.20669,configs/atp_fpq_16_fa_64b_proxy.cfg,"proxy: 64B block; real entry 53 bits; one 16-entry queue modeled. 22nm sensitivity: 0.0165415 nJ read, 0.0168741 nJ write, 4.81067 mW leakage; account for all three queues."
+L1D,1.27745,1.245179,0,configs/l1d_32k_8w_cache.cfg + configs/l1d_64k_16w_cache.cfg,"Sensitivity only (dynamic energy; leakage not charged). ChampSim L1D is 48 KB 12-way, which CACTI cannot build; value is the linear midpoint (assumed) of 32 KB 8-way (0.72895/0.684048 nJ) and 64 KB 16-way (1.82595/1.80631 nJ) runs at 90 nm"
+L2C,1.18587,1.42122,0,configs/l2c_512k_8w_cache.cfg,"Sensitivity only (dynamic energy; leakage not charged). 512 KB 8-way, 64 B block, 90 nm, as in ChampSim"
+LLC,2.63353,2.6716,0,configs/llc_2m_16w_cache.cfg,"Sensitivity only (dynamic energy; leakage not charged). 2 MB 16-way, 64 B block, 90 nm, as in ChampSim"
+PSC_UPPER_PROXY,0.186486,0.207663,5.95101,configs/pq_64_fa_64b_proxy.cfg (90 nm),"upper-bound proxy; real PSC geometries (2, 4, 8 and 32 entries) failed in CACTI, exit 139"

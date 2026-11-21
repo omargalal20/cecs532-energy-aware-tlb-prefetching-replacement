@@ -296,9 +296,10 @@ def add_energy(
         ),
         # Sampler hits are included in lookups; inserts are writes.
         "SBFP_SAMPLER": (sbfp.get("sampler_lookups", 0), sbfp.get("sampler_inserts", 0)),
-        # ATP checks three fake queues per operate call. The current log does
+        # ATP probes its three fake queues only on trigger misses (STLB misses and
+        # hits on prefetched entries), not on every STLB access. The current log does
         # not count fake-queue insertions, so writes are omitted and documented.
-        "ATP_FPQ": (3 * atp.get("operate_calls", 0), 0),
+        "ATP_FPQ": (3 * atp.get("trigger_misses", 0), 0),
         "L1D": (run["l1d_translation_accesses"], 0),
         "L2C": (run["l2c_translation_accesses"], 0),
         "LLC": (run["llc_translation_accesses"], 0),

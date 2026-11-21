@@ -34,7 +34,7 @@ The script maps named counters as follows:
 | SBFP prefetch queue (PQ) | `pq_lookups` | `pq_inserts` |
 | SBFP sampler | `sampler_lookups` | `sampler_inserts` |
 | SBFP FDT | tracked updates plus 14 accesses per decay | same as reads |
-| ATP fake queues | three lookups per `operate_calls` | 0; insertions are not logged |
+| ATP fake queues | three lookups per `trigger_misses` (ATP probes its queues only on STLB misses and hits to prefetched entries, see `prototypes/atp/prefetcher/atp/atp.cc`) | 0; insertions are not logged |
 | L1D, L2C, LLC | `TRANSLATION ACCESS` | 0; counted as reads |
 
 For the FDT, the log does not count read-only threshold probes, so the estimate

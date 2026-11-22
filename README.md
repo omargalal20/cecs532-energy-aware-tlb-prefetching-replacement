@@ -489,6 +489,36 @@ What changes compared with the main tables:
 - Cache energy is 3% to 15% of the total under LRU, so the energy overhead of `atp_sbfp_pq` shrinks slightly (for example `bc.road-131B` 1.137 to 1.108) because saved walks now save cache accesses too.
 - The ranking is now LRU < iTP < ATP+SBFP < ATP+SBFP+iTP on SPEC and LRU ≈ iTP < ATP+SBFP ≈ ATP+SBFP+iTP on GAP; the fastest configuration is still not the lowest-energy one.
 
+### Prefetch accuracy
+
+Accuracy is the share of issued prefetches that were later used (definitions in [docs/energy-accounting.md](docs/energy-accounting.md)). ATP counts a prefetch as useful when a demand miss finds its page already prefetched; SBFP counts a free prefetch as useful when its prefetch-queue entry hits. A dash means no prefetch of that kind was issued. 100M window.
+
+| Trace | Config | ATP prefetches issued | ATP accuracy | SBFP prefetch-queue inserts | SBFP accuracy | Combined accuracy |
+|---|---|---|---|---|---|---|
+| `429.mcf-51B` | `atp_sbfp_pq` | 0 | — | 4,152,038 | 2.8% | 2.8% |
+|  | `atp_sbfp_pq_itp` | 22,622 | 10.7% | 8,696,385 | 1.8% | 1.9% |
+| `620.omnetpp_s-874B` | `atp_sbfp_pq` | 0 | — | 1,504,618 | 2.5% | 2.5% |
+|  | `atp_sbfp_pq_itp` | 0 | — | 2,001,710 | 1.8% | 1.8% |
+| `623.xalancbmk_s-700B` | `atp_sbfp_pq` | 0 | — | 155,477 | 5.0% | 5.0% |
+|  | `atp_sbfp_pq_itp` | 0 | — | 804,690 | 2.5% | 2.5% |
+| `bc.kron-2608B` | `atp_sbfp_pq` | 0 | — | 1,466,478 | 0.3% | 0.3% |
+|  | `atp_sbfp_pq_itp` | 0 | — | 1,471,376 | 0.4% | 0.4% |
+| `bc.road-131B` | `atp_sbfp_pq` | 0 | — | 1,261,967 | 25.5% | 25.5% |
+|  | `atp_sbfp_pq_itp` | 0 | — | 1,439,610 | 22.3% | 22.3% |
+| `bc.twitter-1658B` | `atp_sbfp_pq` | 271,590 | 32.2% | 2,270,334 | 10.7% | 13.0% |
+|  | `atp_sbfp_pq_itp` | 275,766 | 31.7% | 2,288,958 | 10.6% | 12.9% |
+| `619.lbm_s-4268B` | `atp_sbfp_pq` | 207,194 | 34.5% | 13,201 | 4.8% | 32.7% |
+|  | `atp_sbfp_pq_itp` | 204,944 | 33.7% | 12,228 | 4.8% | 32.1% |
+| `649.fotonik3d_s-1176B` | `atp_sbfp_pq` | 54,896 | 25.0% | 0 | — | 25.0% |
+|  | `atp_sbfp_pq_itp` | 55,072 | 24.9% | 0 | — | 24.9% |
+| `654.roms_s-842B` | `atp_sbfp_pq` | 1,580 | 25.0% | 0 | — | 25.0% |
+|  | `atp_sbfp_pq_itp` | 1,580 | 25.0% | 0 | — | 25.0% |
+
+- **ATP is idle on five of nine traces.** On `429.mcf-51B` (without iTP), `620.omnetpp_s-874B`, `623.xalancbmk_s-700B`, `bc.kron-2608B` and `bc.road-131B` it issued no prefetches: the `[ATP]` log shows every trigger miss as `disabled`, so its throttling kept it off. `atp_sbfp_pq` there is effectively SBFP alone. ATP is active on `bc.twitter-1658B`, the three regular traces, and `429.mcf-51B` once iTP is added.
+- **ATP accuracy is 25% to 34% when active, except with iTP on `429.mcf-51B` (10.7%).** On `649.fotonik3d_s-1176B` and `654.roms_s-842B` it is about 25%, because ATP issued exactly four prefetches per trigger miss and each trigger miss counts at most one useful hit.
+- **SBFP accuracy ranges from 0.3% to 25.5%.** It is lowest on `bc.kron-2608B` (0.3%), 2% to 5% on the SPEC traces, and highest on `bc.road-131B` (25.5%), the trace with the largest walk reduction (−38.5%). ATP is off on that trace, so the reduction comes from free prefetching.
+- Low accuracy is consistent with the energy cost: most prefetch-structure activity does not turn into saved walks.
+
 ### Answers to the objectives
 
 **Objective 1 (speedup and energy per configuration).** See the tables above. In short, `baseline_lru` and `itp` cost the least energy; `atp_sbfp_pq` and `atp_sbfp_pq_itp` cost 4% to 15% more.

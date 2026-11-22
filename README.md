@@ -19,7 +19,7 @@ We answer it by simulating a baseline (LRU replacement, no TLB prefetching), ATP
 
 **Hypotheses (stated before the experiments).** The trade-off should vary by workload: aggressive prefetching should raise speed but also energy on irregular workloads, and free prefetching (SBFP) should be among the most efficient. The experiments may instead show one policy to be best on both measures, which is also a useful result.
 
-**Outcome (100M-instruction runs, six traces).** The energy half of the hypothesis holds: prefetching raises estimated energy by 4% to 15% on every trace. The speed half mostly does not: ATP+SBFP is within about 0.1% of LRU on five traces and gains 2.0% on `bc.twitter-1658B`. Free prefetching (SBFP) was expected to be among the most efficient, but it is not: it costs energy and saves almost no time here. No policy beats LRU on both measures on SPEC. On GAP, iTP is marginally ahead of LRU on energy (0.1% to 0.5% lower) with speed within 0.2%. The fastest policy is never the lowest-energy one. See [Answers to the objectives](#answers-to-the-objectives).
+**Outcome (100M-instruction runs, nine traces: three SPEC, three GAP, three regular SPEC).** The energy half of the hypothesis holds: prefetching raises estimated energy by 4% to 15% on every trace. The speed half mostly does not: ATP+SBFP is within about 0.4% of LRU on seven traces and gains 2.0% on `bc.twitter-1658B`; it is 2.1% slower on the regular trace `649.fotonik3d_s-1176B`. Free prefetching (SBFP) was expected to be among the most efficient, but it is not: it costs energy and saves almost no time here. No policy beats LRU on both measures on SPEC. On GAP, iTP is marginally ahead of LRU on energy (0.1% to 0.5% lower) with speed within 0.2%. The fastest policy is never the lowest-energy one. See [Answers to the objectives](#answers-to-the-objectives).
 
 ## Background
 
@@ -50,7 +50,7 @@ Both can reduce page walks, but speculative prefetches consume energy and affect
 | `atp_sbfp_pq_itp` | ATP + SBFP with prefetch queue | iTP | Required |
 | `atp` , `atp_itp` | ATP only (no SBFP) | LRU / iTP | Diagnostic: isolates SBFP's contribution |
 | `atp_sbfp` , `atp_sbfp_itp` | ATP + SBFP, free PTEs fill the STLB directly (no prefetch queue) | LRU / iTP | Ablation: shows the cost of STLB pollution |
-| STLB-capacity and page-size sensitivity, 4-core runs | — | — | Stretch |
+| SBFP alone (without ATP), CHiRP, STLB-capacity and page-size sensitivity, 4-core runs | — | — | Stretch goals from the proposal; not done |
 
 **What each policy does, and how it ranks.**
 
@@ -67,9 +67,18 @@ Ranking is by energy versus LRU in the tables under [Results](#results); the exa
 ## Methodology
 
 ```
- trace ──► ChampSim (modified) ──► counters ──┐
-                                              ├──► energy_fusion.py ──► results_table.csv
- CACTI ──► per-access energy, leakage ────────┘                         (speedup, energy, EDP)
+ DPC-3 SPEC / GAP traces
+        │
+        ▼
+ ChampSim (pinned, + iTP / ATP / SBFP modules, walker counters)
+        │   one binary per configuration (configs/*.json)
+        ▼
+ raw outputs: cycles, TLB / walker / ATP / SBFP counters   results/raw*/<config>__<trace>.txt
+        │                                                      ┌──────────────────────────────┐
+        ├──────────────────────────────────────────────────►   │ energy/energy_fusion.py      │
+        │                                                      │ counts × CACTI per-access    │──► speedup, energy, EDP
+ CACTI 90 nm (22 nm sensitivity) ─► energy/cacti_per_access.csv│ + leakage × runtime + DRAM   │    tables and plots
+                                                               └──────────────────────────────┘
 ```
 
 **Simulator.** [ChampSim](https://github.com/ChampSim/ChampSim), pinned to commit `410cee6` (see `scripts/setup.sh`). It models a TLB hierarchy and a hardware page-table walker with page-structure caches. It ships no TLB-specific prefetcher and no iTP, so these are implemented as ChampSim modules in this project.
@@ -103,7 +112,7 @@ CACTI did not directly provide the project's 1,536-entry, 128-set × 12-way STLB
 
 The 2,048-to-1,024 ratios are 2.447 read, 2.538 write, and 2.022 leakage at 90 nm; at 22 nm they are 2.291, 2.274, and 1.949. The ratio shifts at 22 nm are −6.38%, −10.43%, and −3.61%, respectively.
 
-For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et al. [5]. Table 2 reports this value for DDR3 at 1333 MHz with two DIMMs per channel and labels its average-read row as **page-open**: 18 nJ array read + 1 nJ read I/O + 12 nJ additional termination + 25 nJ activate/pre-charge. The paper states that one memory access is 64 bytes and discusses a page-closed policy elsewhere; this README reports the Table 2 row label specifically, without treating it as the paper's general policy assumption. This is a published system estimate, not a measurement of our machine; the project applies it once per LLC `TRANSLATION MISS` counted as one DRAM read.
+For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et al. [5]. Table 2 reports this value for DDR3 at 1333 MHz with two DIMMs per channel and labels its average-read row as **page-closed policy**: 18 nJ array read + 1 nJ read I/O + 12 nJ additional termination + 25 nJ activate/pre-charge. Every access therefore pays for opening and closing a page, so reads that hit an already open page would cost less and 56 nJ leans high. We assume one LLC translation miss is one 64-byte read; the Table 2 caption does not state the access size. The 800 MHz row of the same table is 64.7 nJ, so the value depends on memory frequency. This is a published system estimate, not a measurement of our machine; the project applies it once per LLC `TRANSLATION MISS` counted as one DRAM read.
 
 **Metrics.** IPC and speedup over `baseline_lru`; STLB misses (MPKI); page-walk memory references; prefetch accuracy; estimated translation energy; EDP as a derived comparison.
 
@@ -155,7 +164,7 @@ For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et a
 - None of the 14 traces has substantial instruction pressure on the STLB (maximum 7.7%), and the three mcf traces have none. iTP can therefore only be tested meaningfully on `620.omnetpp_s-874B` (weakly on `471.omnetpp-188B`), so iTP results should be read with this in mind.
 - We have not investigated why the traces differ in STLB behaviour; the table reports measurements only.
 - GAP (graph) was successfully screened using ChampSim; they show substantial STLB activity but 0% instruction share.
-- XSBench (scientific proxy) traces may stress the TLB more, but their availability in ChampSim format is not verified.
+- XSBench traces are listed in the same Zenodo record as the GAP traces (four inputs). We have not downloaded or run them.
 
 **Reproducing a row.** Download the trace from the DPC-3 server into `traces/` (sources and the screening steps for new traces are in [docs/trace-sources.md](docs/trace-sources.md)), then run `scripts/run_baseline.sh traces/<trace>.champsimtrace.xz 10 20`. The raw output goes to `results/raw/baseline_lru__<trace>.txt`. The MPKI, latency and instruction share are computed from the `STLB`, `DTLB` and `ITLB` lines of that file.
 
@@ -380,6 +389,31 @@ Same method and scenarios as the SPEC energy table above.
 - iTP is energy-neutral on these traces. On `bc.road-131B` it is slightly faster (+0.2%) and slightly lower in energy (0.995x), so it is the only configuration that improves both measures there. This is a small effect that we have not explained.
 - As with SPEC, the fastest configuration (`atp_sbfp_pq_itp` on `bc.twitter-1658B` and `bc.road-131B`) is not the lowest-energy one.
 
+### Regular workloads (SPEC, 20M + 100M, four required configurations)
+
+To cover the regular side of objective 3 we ran three dense scientific SPEC traces with very low STLB MPKI under LRU (screened earlier as dropped for low pressure): `619.lbm_s-4268B`, `649.fotonik3d_s-1176B` and `654.roms_s-842B`. We did not measure their access pattern ourselves; we call them regular because they are scientific stencil codes, and the ATP counters are consistent with a predictable access pattern (on `649.fotonik3d_s-1176B` ATP selected its `STP` prefetcher on all 13,724 trigger misses, and 13,701 of them found the page already in a fake queue). Raw outputs are kept locally in `results/raw_regular/` (not tracked in git). "Page walks (all)" counts every walk the walker performed, including prefetch walks. The last column adds the dynamic-only L1D, L2C and LLC energy from the cache-energy sensitivity below.
+
+| Trace | Config | IPC | Speedup vs LRU | STLB demand MPKI | STLB demand misses | Page walks (all) | of which prefetch | Energy vs LRU (PSC 0 / proxy) | EDP vs LRU | Energy vs LRU with cache energy |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `619.lbm_s-4268B` | `baseline_lru` | 0.4370 | 1.0000 | 0.742 | 74,163 | 74,163 | 0 | 1.000 / 1.000 | 1.000 | 1.000 |
+|  | `itp` | 0.4369 | 0.9998 | 0.711 | 71,100 | 71,100 | 0 | 0.999 / 0.999 | 0.999 | 0.999 |
+|  | `atp_sbfp_pq` | 0.4386 | 1.0038 | 0.028 | 2,773 | 73,784 | 71645 | 1.087 / 1.081 | 1.082 | 1.090 |
+|  | `atp_sbfp_pq_itp` | 0.4386 | 1.0037 | 0.027 | 2,700 | 72,292 | 70180 | 1.086 / 1.080 | 1.082 | 1.089 |
+| `649.fotonik3d_s-1176B` | `baseline_lru` | 0.3870 | 1.0000 | 0.137 | 13,724 | 13,724 | 0 | 1.000 / 1.000 | 1.000 | 1.000 |
+|  | `itp` | 0.3871 | 1.0002 | 0.137 | 13,743 | 13,743 | 0 | 1.000 / 1.000 | 1.000 | 1.000 |
+|  | `atp_sbfp_pq` | 0.3791 | 0.9795 | 0.000 | 23 | 13,813 | 13790 | 1.075 / 1.072 | 1.098 | 1.076 |
+|  | `atp_sbfp_pq_itp` | 0.3791 | 0.9795 | 0.001 | 67 | 14,005 | 13938 | 1.075 / 1.072 | 1.098 | 1.076 |
+| `654.roms_s-842B` | `baseline_lru` | 1.8327 | 1.0000 | 0.004 | 395 | 395 | 0 | 1.000 / 1.000 | 1.000 | 1.000 |
+|  | `itp` | 1.8327 | 1.0000 | 0.004 | 395 | 395 | 0 | 1.000 / 1.000 | 1.000 | 1.000 |
+|  | `atp_sbfp_pq` | 1.8346 | 1.0010 | 0.000 | 0 | 422 | 422 | 1.036 / 1.035 | 1.035 | 1.037 |
+|  | `atp_sbfp_pq_itp` | 1.8346 | 1.0010 | 0.000 | 0 | 422 | 422 | 1.036 / 1.035 | 1.035 | 1.037 |
+
+What the regular traces show:
+- **iTP does nothing.** Speed is within 0.02% and energy within 0.1% of LRU. With this little STLB pressure there is almost nothing to replace.
+- **ATP+SBFP predicts well but saves no walks.** On `619.lbm_s-4268B` demand STLB misses fall from 74,163 to 2,773 and on `649.fotonik3d_s-1176B` from 13,724 to 23, but the walker performs about as many walks as before (73,784 and 13,813), because each prefetched page needs its own walk. Speed is +0.4% on `619.lbm_s-4268B`, −2.1% on `649.fotonik3d_s-1176B`, and +0.1% on `654.roms_s-842B`.
+- **Energy goes up anyway.** ATP+SBFP costs +3.6% to +8.7% energy (EDP +3.5% to +9.8%), so the fastest configuration is again not the lowest-energy one, and on `649.fotonik3d_s-1176B` it is slower and costs more energy.
+- **Open question.** We have not established why `649.fotonik3d_s-1176B` is 2.1% slower. The counters show no saved walks and 13,790 extra prefetch walks on a trace with IPC 0.39, so extra walker and memory traffic is a candidate, but we did not test it.
+
 ### Cache-energy sensitivity (L1D, L2C, LLC energy for page-walk accesses)
 
 The main tables above exclude the energy of page-walk accesses served by L1D, L2C and LLC. This sensitivity adds it, using CACTI at 90 nm with ChampSim's cache sizes (L1D 48 KB 12-way, L2C 512 KB 8-way, LLC 2 MB 16-way; `energy/cacti_with_caches.csv`, configs `configs/*_cache.cfg`). CACTI cannot build the 12-way 48 KB L1D, so its per-access energy is the linear midpoint (assumed) of 32 KB 8-way and 64 KB 16-way runs. Only dynamic energy of translation accesses is charged (no cache leakage, which is shared by all configurations and not specific to translation). Reproduce with `python3 energy/energy_fusion.py results/raw_20_100/*.txt --cacti-csv energy/cacti_with_caches.csv`. All other inputs are unchanged. 100M window.
@@ -438,7 +472,7 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 
 ![Energy breakdown by structure](docs/figures/analysis/energy_breakdown.png)
 
-**Objective 3 (workload types).** All six traces are irregular (STLB MPKI of at least 1.7 under LRU), so we cannot compare irregular against regular access patterns; this is a stated limitation. Within the traces we have, behaviour separates by how much reuse the STLB captures under LRU:
+**Objective 3 (workload types).** Six traces are irregular (STLB MPKI of at least 1.7 under LRU) and three are regular scientific codes with almost no STLB pressure (0.004 to 0.74 MPKI). On the regular traces no policy gives a speed benefit that justifies its energy (see [Regular workloads](#regular-workloads-spec-20m--100m-four-required-configurations)): iTP changes nothing and ATP+SBFP predicts almost every miss but saves no walks. XSBench, named in the proposal, has not been run. Among the irregular traces, behaviour separates by how much reuse the STLB captures under LRU:
 
 ![STLB reuse and policy effect on page walks](docs/figures/analysis/spec_vs_gap.png)
 
@@ -460,9 +494,26 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 | Proposal | Complete |
 | Repository, build, baseline run and trace screening | Complete (14 traces screened, 3 selected) |
 | ATP/SBFP and iTP implementation, counters | Complete; all configurations run on the three selected traces (10M + 20M, and 20M + 100M for the four required configurations) |
-| CACTI models of TLB, PQ and SBFP structures | Complete at 90 nm with proxies (PSC unavailable, cache rows not modeled); see Limitations |
+| CACTI models of TLB, PQ and SBFP structures | Complete at 90 nm with proxies (PSC unavailable); L1D, L2C and LLC added as a dynamic-only sensitivity; see Limitations |
 | Full experiment set and energy fusion | Complete: speed and estimated energy for SPEC (100M and 10M + 20M) and GAP (100M) |
-| Final report | Not started |
+| Stretch goals (SBFP alone, CHiRP, 4-core, STLB and page-size sweeps) | Not done |
+| Final report | Tracked outside this repository |
+
+## Decisions
+
+| Decision | Outcome and reason |
+|---|---|
+| iTP without xPTP | Only the STLB replacement part of the ASPLOS 2025 design is implemented; xPTP is not. The paper says iTP alone raises data STLB misses, which our SPEC results show. |
+| Where free (SBFP) prefetches go | Required configurations use a separate 64-entry prefetch queue in the walker, as in the paper. Direct fill into the STLB is kept as an ablation because it pollutes the STLB (up to +43% energy at 10M + 20M). |
+| Traces | Three irregular SPEC traces (`429.mcf-51B`, `620.omnetpp_s-874B`, `623.xalancbmk_s-700B`), three GAP traces (`bc.kron-2608B`, `bc.road-131B`, `bc.twitter-1658B`), chosen by STLB MPKI screening, and three regular SPEC traces (`619.lbm_s-4268B`, `649.fotonik3d_s-1176B`, `654.roms_s-842B`) added to cover objective 3. See Trace selection. |
+| Measurement window | 20M warmup + 100M simulated for the four required configurations; 10M + 20M for the ablations. Short windows can mislead (iTP on `623.xalancbmk_s-700B`: −0.3% at 20M, −2.1% at 100M). |
+| Energy node | 90 nm for all tables; 22 nm values kept as sensitivity (team decision). |
+| 1536-entry STLB | CACTI needs powers of two, so the value is the linear midpoint of the 1024- and 2048-entry runs. |
+| Small structures | CACTI cannot build entries as small as ours, so 64 B or 128 B block proxies are used. This overestimates energy and leakage of the prefetch structures. |
+| Page-structure caches | Reported as a range (0, and a 64-entry proxy) because CACTI failed on all four geometries. |
+| DRAM energy | 56 nJ per LLC translation miss (David et al., Table 2). An estimate, not a measurement. |
+| L1D, L2C and LLC energy | Left out of the main tables because the proposal scopes CACTI to TLB and queue arrays; reported separately as a dynamic-only sensitivity. |
+| Stretch goals | SBFP alone, CHiRP, 4-core runs and STLB and page-size sweeps are not done. |
 
 ## Validity and limits
 
@@ -473,7 +524,7 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 **What this does not establish.**
 - The recompute uses the same energy formulas as `energy_fusion.py`; it catches arithmetic and parsing mistakes, not modelling mistakes in the formulas.
 - The size of the energy overhead depends on CACTI proxies and the 90 nm node; the sign (prefetching costs energy) holds in all our variants (dynamic-only, 22 nm).
-- All six traces are irregular. No regular-access trace has been run, so objective 3 is only partly answered.
+- The three regular traces have very low STLB pressure, so they show where policies do nothing or hurt, not where a regular workload benefits. XSBench (named in the proposal) has not been run.
 - The main tables exclude energy of L1D, L2C and LLC accesses made by page walks. The [cache-energy sensitivity](#cache-energy-sensitivity-l1d-l2c-llc-energy-for-page-walk-accesses) adds it (dynamic only, L1D value interpolated): the prefetching overhead shrinks by up to 3 points and iTP stops being energy-neutral on SPEC, but the ranking of the required configurations does not change.
 - Windows are 100M instructions. Phase effects matter (see the iTP result on `623.xalancbmk_s-700B`).
 
@@ -482,7 +533,7 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 - ATP/SBFP and iTP are simplified re-implementations, not the authors' code.
 - CACTI requires power-of-two array sizes; the STLB is approximated.
 - Energy covers translation-related structures and page-walk memory references only, not whole-core energy.
-- Results come from six traces and single-core runs unless the stretch goals are reached. All six are irregular; no regular-access workload (for example the proposal's XSBench) has been run, so objective 3 is only partly answered.
+- Results come from nine traces and single-core runs unless the stretch goals are reached. The regular traces have very low STLB pressure, and the proposal's XSBench has not been run.
 - Short measurement windows. The iTP slowdown on `623.xalancbmk_s-700B` is 0.3% at 20M instructions and 2.1% at 100M, so results depend on which part of the trace is measured.
 - Details the papers do not state, which we had to assume (marked `ASSUMPTION` or `assumed` in the code):
   - SBFP: free-distance counters start at 0; a Sampler entry is removed when it hits; the prefetch queue is FIFO and an entry is removed when it hits; free neighbours are looked up when the page walk completes, and only neighbours that are already mapped are prefetched.

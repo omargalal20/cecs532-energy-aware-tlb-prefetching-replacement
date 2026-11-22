@@ -50,7 +50,6 @@ Both can reduce page walks, but speculative prefetches consume energy and affect
 | `atp_sbfp_pq_itp` | ATP + SBFP with prefetch queue | iTP | Required |
 | `atp` , `atp_itp` | ATP only (no SBFP) | LRU / iTP | Diagnostic: isolates SBFP's contribution |
 | `atp_sbfp` , `atp_sbfp_itp` | ATP + SBFP, free PTEs fill the STLB directly (no prefetch queue) | LRU / iTP | Ablation: shows the cost of STLB pollution |
-| SBFP alone (without ATP), CHiRP, STLB-capacity and page-size sensitivity, 4-core runs | — | — | Stretch goals from the proposal; not done |
 
 **What each policy does, and how it ranks.**
 
@@ -120,7 +119,7 @@ For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et a
 
 | Item | Value |
 |---|---|
-| Simulator | ChampSim `410cee6`, single core (4-core as stretch) |
+| Simulator | ChampSim `410cee6`, single core |
 | Core / TLBs | ChampSim defaults: 4 GHz core, STLB 128 sets × 12 ways, 4 KB pages |
 | STLB prefetch queue | `pq_size = 8` (default is 0, which disables STLB prefetching) |
 | Traces | `429.mcf-51B`, `620.omnetpp_s-874B`, `623.xalancbmk_s-700B`, selected by STLB MPKI (see Trace selection below) |
@@ -290,7 +289,7 @@ python3 energy/energy_fusion.py results/raw/*.txt --cacti-csv energy/cacti_per_a
 python3 scripts/plot_results.py
 ```
 
-The script reports PSC=0 lower-bound totals when required structure inputs and the DRAM estimate are available. Missing L1D/L2C/LLC CACTI rows are optional: cache energy for page-walk accesses is excluded and the result is labeled accordingly. The upper-bound PSC scenario uses `PSC_UPPER_PROXY` when present, copied from the 64-entry fully associative PQ proxy at 90 nm; until then, it uses the PQ row directly. The default DRAM estimate is 56 nJ per LLC translation miss, using the team’s cited 64-byte-read assumption. See [docs/energy-accounting.md](docs/energy-accounting.md) for counter mappings and assumptions.
+The script reports PSC=0 lower-bound totals when required structure inputs and the DRAM estimate are available. Missing L1D/L2C/LLC CACTI rows are optional: cache energy for page-walk accesses is excluded and the result is labeled accordingly. The upper-bound PSC scenario uses `PSC_UPPER_PROXY` when present, copied from the 64-entry fully associative PQ proxy at 90 nm; until then, it uses the PQ row directly. The default DRAM estimate is 56 nJ per LLC translation miss, using the cited estimate, with one 64-byte read assumed per miss. See [docs/energy-accounting.md](docs/energy-accounting.md) for counter mappings and assumptions.
 
 ## Results
 
@@ -493,11 +492,10 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 |---|---|
 | Proposal | Complete |
 | Repository, build, baseline run and trace screening | Complete (14 traces screened, 3 selected) |
-| ATP/SBFP and iTP implementation, counters | Complete; all configurations run on the three selected traces (10M + 20M, and 20M + 100M for the four required configurations) |
+| ATP/SBFP and iTP implementation, counters | Complete; all eight configurations run on the three selected SPEC traces (10M + 20M), and the four required configurations on nine traces (20M + 100M) |
 | CACTI models of TLB, PQ and SBFP structures | Complete at 90 nm with proxies (PSC unavailable); L1D, L2C and LLC added as a dynamic-only sensitivity; see Limitations |
-| Full experiment set and energy fusion | Complete: speed and estimated energy for SPEC (100M and 10M + 20M) and GAP (100M) |
-| Stretch goals (SBFP alone, CHiRP, 4-core, STLB and page-size sweeps) | Not done |
-| Final report | Tracked outside this repository |
+| Full experiment set and energy fusion | Complete: speed and estimated energy for irregular SPEC, GAP and regular SPEC traces |
+| Validation and analysis | Complete: README tables recomputed from the raw outputs (204 values, no mismatches); Pareto, workload-type and literature comparison in Results |
 
 ## Decisions
 
@@ -513,7 +511,6 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 | Page-structure caches | Reported as a range (0, and a 64-entry proxy) because CACTI failed on all four geometries. |
 | DRAM energy | 56 nJ per LLC translation miss (David et al., Table 2). An estimate, not a measurement. |
 | L1D, L2C and LLC energy | Left out of the main tables because the proposal scopes CACTI to TLB and queue arrays; reported separately as a dynamic-only sensitivity. |
-| Stretch goals | SBFP alone, CHiRP, 4-core runs and STLB and page-size sweeps are not done. |
 
 ## Validity and limits
 
@@ -533,7 +530,7 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 - ATP/SBFP and iTP are simplified re-implementations, not the authors' code.
 - CACTI requires power-of-two array sizes; the STLB is approximated.
 - Energy covers translation-related structures and page-walk memory references only, not whole-core energy.
-- Results come from nine traces and single-core runs unless the stretch goals are reached. The regular traces have very low STLB pressure, and the proposal's XSBench has not been run.
+- Results come from nine traces and single-core runs. The regular traces have very low STLB pressure, and the proposal's XSBench has not been run.
 - Short measurement windows. The iTP slowdown on `623.xalancbmk_s-700B` is 0.3% at 20M instructions and 2.1% at 100M, so results depend on which part of the trace is measured.
 - Details the papers do not state, which we had to assume (marked `ASSUMPTION` or `assumed` in the code):
   - SBFP: free-distance counters start at 0; a Sampler entry is removed when it hits; the prefetch queue is FIFO and an entry is removed when it hits; free neighbours are looked up when the page walk completes, and only neighbours that are already mapped are prefetched.

@@ -11,6 +11,7 @@ This repository contains the simulation infrastructure and results for a trace-d
 > Which TLB prefetching and STLB replacement policies provide the best trade-off between execution speed and estimated translation energy?
 
 **Objectives**
+
 1. Measure speedup and estimated translation energy for each configuration.
 2. Identify Pareto-optimal configurations.
 3. Characterize which workload types (for example irregular versus regular access patterns) favor which policy, to inform TLB design choices. This follows from the proposal's expected workload dependence.
@@ -29,7 +30,7 @@ Every memory access needs a virtual-to-physical translation. Translations are ca
 - **iTP (instruction-aware STLB replacement).** iTP biases STLB replacement toward instruction translations, which are more costly to miss, and is designed to cooperate with cache replacement [2].
 
 | Term | Meaning |
-|---|---|
+| --- | --- |
 | STLB | Second-level (shared) TLB. A miss here starts a page-table walk. |
 | Page walk | Hardware lookup of the page table in memory after an STLB miss. |
 | PSC | Page-structure cache: caches upper page-table levels to shorten walks. |
@@ -43,7 +44,7 @@ Both can reduce page walks, but speculative prefetches consume energy and affect
 ## Evaluated Configurations
 
 | ID | STLB prefetching | STLB replacement | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `baseline_lru` | none | LRU | Required |
 | `itp` | none | iTP | Required |
 | `atp_sbfp_pq` | ATP + SBFP (free PTEs go to a separate 64-entry prefetch queue, as in the paper) | LRU | Required |
@@ -54,7 +55,7 @@ Both can reduce page walks, but speculative prefetches consume energy and affect
 **What each policy does, and how it ranks.**
 
 | Policy | Mechanism | Effect measured here | Energy rank (1 = lowest) |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `baseline_lru` | Evict the least recently used STLB entry; no prefetching | Reference | 1 (tied with iTP) |
 | `itp` | Instruction translations are kept longer; data translations are inserted near the eviction end (no xPTP) | Data page walks rise (+20% to +121% on SPEC, 0% to +11% on GAP), so SPEC is slower (−0.3% to −2.1%); GAP speed within +0.2% | 1 (+0.2% on SPEC; −0.5% to −0.1% on GAP) |
 | `atp_sbfp_pq` | ATP predicts future pages; SBFP keeps useful neighbour PTEs from each walk in a separate 64-entry queue, so the STLB is not polluted | Walks −5% to −38.5% except `bc.kron-2608B` (0%); speed within about 0.1% except +2.0% on `bc.twitter-1658B` | 2 (+4% to +14%) |
@@ -99,7 +100,7 @@ Per-access energies and leakage come from [CACTI](https://github.com/HewlettPack
 The final energy table uses 90 nm; 22 nm is a technology-node sensitivity comparison. CACTI 7.0.3DD Prerelease (Aug. 2012; repository pin `1ffd8df`) was run with 128 sets, a 64-byte block, a 49-bit tag, and one read/write port. The 64-byte block is a CACTI cache-model proxy, not a literal TLB entry.
 
 | Entries | Node / role | Read energy (nJ/access) | Write energy (nJ/access) | Leakage (mW) |
-|---:|---|---:|---:|---:|
+| ---: | --- | ---: | ---: | ---: |
 | 1,024 (128 × 8) | 90 nm | 0.764013 | 0.766323 | 30.9463 |
 | 2,048 (128 × 16) | 90 nm | 1.86933 | 1.94523 | 62.569 |
 | **1,536 estimate (128 × 12)** | **90 nm final** | **1.3166715** | **1.3557765** | **46.75765** |
@@ -118,7 +119,7 @@ For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et a
 ## Experimental Setup
 
 | Item | Value |
-|---|---|
+| --- | --- |
 | Simulator | ChampSim `410cee6`, single core |
 | Core / TLBs | ChampSim defaults: 4 GHz core, STLB 128 sets × 12 ways, 4 KB pages |
 | STLB prefetch queue | `pq_size = 8` (default is 0, which disables STLB prefetching) |
@@ -132,7 +133,7 @@ For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et a
 **Result.** 14 traces were screened (the heaviest published SimPoint slice of 12 benchmarks, plus two more mcf slices). Eight of the 14 have an STLB MPKI below 1.
 
 | Trace | SimPoint weight | STLB MPKI | STLB miss latency (cycles) | Instruction share of STLB accesses | Decision |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | `429.mcf-51B` | 0.323 | 11.23 | 110.4 | 0.0% | **Selected** |
 | `471.omnetpp-188B` | 0.945 | 4.30 | 65.8 | 2.1% | Backup |
 | `620.omnetpp_s-874B` | 0.828 | 4.26 | 93.2 | 7.7% | **Selected** |
@@ -149,17 +150,20 @@ For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et a
 | `654.roms_s-842B` | 0.431 | 0.00 | 250.8 | 0.0% | Dropped |
 
 **How to read the table.**
+
 - *STLB MPKI* is STLB misses divided by simulated instructions, times 1000. Miss rate alone is misleading: `429.mcf-22B` misses on 63% of its STLB accesses but has far fewer misses per instruction than `429.mcf-51B`.
 - *Instruction share* is the fraction of STLB accesses that come from instruction fetches, computed as (ITLB misses − ITLB merged misses) / STLB accesses. It matters for iTP, which treats instruction translations specially.
 - *SimPoint weight* is how much of the full program the slice represents. The number in a trace name is its SimPoint slice index, taken from `weights-and-simpoints-speccpu.tar.gz` on the DPC-3 trace server; the site does not define the "B" suffix.
 - Each value comes from a single 20M-instruction measurement window per trace.
 
 **Selected set and why.**
+
 - `429.mcf-51B` has by far the highest STLB pressure, which is what ATP and SBFP act on.
 - `620.omnetpp_s-874B` is the second program with high MPKI and the only selected trace with a meaningful instruction share (7.7%).
 - `623.xalancbmk_s-700B` has moderate MPKI but cheap walks (23.6 cycles per miss against 93 to 110 for the other two), which gives a contrasting regime. Choosing it for that contrast is a design decision, not a measured result.
 
 **Limitations.**
+
 - None of the 14 traces has substantial instruction pressure on the STLB (maximum 7.7%), and the three mcf traces have none. iTP can therefore only be tested meaningfully on `620.omnetpp_s-874B` (weakly on `471.omnetpp-188B`), so iTP results should be read with this in mind.
 - We have not investigated why the traces differ in STLB behaviour; the table reports measurements only.
 - GAP (graph) was successfully screened using ChampSim; they show substantial STLB activity but 0% instruction share.
@@ -182,7 +186,7 @@ In addition to the DPC-3 SPEC traces, we obtained three GAP graph-processing tra
 **Baseline results**
 
 | Metric | bc.kron-2608B | bc.road-131B | bc.twitter-1658B |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | IPC | 0.2279 | 0.1215 | 0.2072 |
 | Instructions | 20,000,002 | 20,000,000 | 20,000,003 |
 | Cycles | 87,763,757 | 164,555,250 | 96,513,323 |
@@ -243,7 +247,7 @@ These traces supplement the original DPC-3 screening results rather than replaci
 A C++17 toolchain, CMake, `git`, `curl`, `zip`, `unzip`, `tar`, `pkg-config` and Python 3.10+.
 
 | Platform | Install |
-|---|---|
+| --- | --- |
 | **Windows** | Install WSL 2 with Ubuntu 24.04 (`wsl --install -d Ubuntu-24.04`), then work inside the Linux filesystem (`~/`), not under `/mnt/c`, which is much slower. Follow the Linux line below. |
 | **Ubuntu / Debian** | `sudo apt update && sudo apt install -y build-essential cmake ninja-build git curl zip unzip tar pkg-config python3` |
 | **macOS** | `xcode-select --install && brew install cmake ninja git pkg-config python` |
@@ -274,7 +278,7 @@ Raw output is saved to `results/raw/baseline_lru__<trace>.txt`.
 ### 5. Read the counters
 
 | Output line | Meaning |
-|---|---|
+| --- | --- |
 | `cumulative IPC: … instructions: … cycles: …` | Performance of the core |
 | `cpu0->cpu0_STLB TOTAL ACCESS / HIT / MISS` | STLB demand behaviour; MISS drives page walks |
 | `cpu0->cpu0_STLB PREFETCH REQUESTED / ISSUED / USEFUL / USELESS` | Prefetch accuracy (zero for the baseline) |
@@ -305,19 +309,19 @@ The script reports PSC=0 lower-bound totals when required structure inputs and t
 Measured on single-core ChampSim, 20M warmup + 100M simulated instructions, for the four required configurations. Raw outputs: `results/raw_20_100/`; derived tables: `results/tables/results_20_100.csv` (main), `results/tables/results_20_100_with_caches.csv` (cache-energy sensitivity) and `results/tables/results_10_20.csv`. Speedup is cycles of `baseline_lru` divided by cycles of the configuration. Page walks are the walks counted by the page-table walker (for the baseline they equal the STLB misses; with the prefetch queue, STLB misses served from the queue do not start a walk, so walks can be lower than STLB misses). STLB MPKI uses STLB LOAD misses (demand misses); STLB TOTAL ACCESS remains the activity input for STLB energy because it includes prefetch accesses. Energy outputs use PSC=0 as the lower-bound scenario and the 64-entry PQ proxy as the PSC upper-bound scenario. If cache CACTI rows are missing, page-walk cache energy is excluded and flagged in the output. The DRAM estimate is 56 nJ per LLC translation miss under the cited 64-byte read assumption. See [docs/energy-accounting.md](docs/energy-accounting.md) for definitions and current limitations.
 
 | Trace | Config | IPC | Speedup vs LRU | STLB MPKI | Page walks | Walks vs LRU | Energy vs LRU (PSC 0 / proxy) | EDP vs LRU |
-|---|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `429.mcf-51B` | `baseline_lru` | 0.1460 | 1.0000 | 10.77 | 1,076,833 | — | 1.000 / 1.000 | 1.000 |
-|  | `itp` | 0.1448 | 0.9923 | 20.79 | 2,078,715 | +93% | 1.002 / 1.015 | 1.010 |
-|  | `atp_sbfp_pq` | 0.1461 | 1.0008 | 10.77 | 959,014 | −11% | 1.112 / 1.101 | 1.111 |
-|  | `atp_sbfp_pq_itp` | 0.1450 | 0.9937 | 19.64 | 1,817,148 | +69% | 1.150 / 1.148 | 1.158 |
+| | `itp` | 0.1448 | 0.9923 | 20.79 | 2,078,715 | +93% | 1.002 / 1.015 | 1.010 |
+| | `atp_sbfp_pq` | 0.1461 | 1.0008 | 10.77 | 959,014 | −11% | 1.112 / 1.101 | 1.111 |
+| | `atp_sbfp_pq_itp` | 0.1450 | 0.9937 | 19.64 | 1,817,148 | +69% | 1.150 / 1.148 | 1.158 |
 | `620.omnetpp_s-874B` | `baseline_lru` | 0.4166 | 1.0000 | 4.29 | 429,352 | — | 1.000 / 1.000 | 1.000 |
-|  | `itp` | 0.4154 | 0.9972 | 5.14 | 513,990 | +20% | 1.002 / 1.004 | 1.005 |
-|  | `atp_sbfp_pq` | 0.4167 | 1.0003 | 4.29 | 392,281 | −9% | 1.076 / 1.072 | 1.076 |
-|  | `atp_sbfp_pq_itp` | 0.4158 | 0.9981 | 5.14 | 478,429 | +11% | 1.084 / 1.081 | 1.086 |
+| | `itp` | 0.4154 | 0.9972 | 5.14 | 513,990 | +20% | 1.002 / 1.004 | 1.005 |
+| | `atp_sbfp_pq` | 0.4167 | 1.0003 | 4.29 | 392,281 | −9% | 1.076 / 1.072 | 1.076 |
+| | `atp_sbfp_pq_itp` | 0.4158 | 0.9981 | 5.14 | 478,429 | +11% | 1.084 / 1.081 | 1.086 |
 | `623.xalancbmk_s-700B` | `baseline_lru` | 0.9183 | 1.0000 | 1.71 | 171,437 | — | 1.000 / 1.000 | 1.000 |
-|  | `itp` | 0.8993 | 0.9793 | 3.78 | 378,434 | +121% | 1.002 / 1.008 | 1.023 |
-|  | `atp_sbfp_pq` | 0.9185 | 1.0002 | 1.71 | 163,586 | −5% | 1.038 / 1.036 | 1.038 |
-|  | `atp_sbfp_pq_itp` | 0.9004 | 0.9804 | 3.69 | 349,054 | +104% | 1.050 / 1.055 | 1.071 |
+| | `itp` | 0.8993 | 0.9793 | 3.78 | 378,434 | +121% | 1.002 / 1.008 | 1.023 |
+| | `atp_sbfp_pq` | 0.9185 | 1.0002 | 1.71 | 163,586 | −5% | 1.038 / 1.036 | 1.038 |
+| | `atp_sbfp_pq_itp` | 0.9004 | 0.9804 | 3.69 | 349,054 | +104% | 1.050 / 1.055 | 1.071 |
 
 **Figures** (generated by `scripts/plot_results.py` from `results/tables/results_20_100.csv`; for example `python3 scripts/plot_results.py results/tables/results_20_100.csv --traces 429,620,623 --out docs/figures/spec`, with `--traces bc.` for GAP and `--traces 619,649,654` for the regular traces; the 10M + 20M figure uses `results/tables/results_10_20.csv`).
 
@@ -330,6 +334,7 @@ Energy columns in the table above come from `energy/energy_fusion.py` with CACTI
 ![Speedup against estimated energy, SPEC 100M](docs/figures/spec/pareto.png)
 
 **What the energy numbers show (100M window).**
+
 - `baseline_lru` has the lowest energy on every trace. iTP costs about the same (+0.2%) but is slower, so it is not on the speed-energy frontier here.
 - `atp_sbfp_pq` costs +4% to +11% energy (EDP +4% to +11%) for at most +0.08% speed. Adding iTP raises it to +5% to +15%.
 - On every trace the fastest configuration (`atp_sbfp_pq`) is not the lowest-energy one, so the fastest policy is not the most energy-efficient.
@@ -342,31 +347,31 @@ The 10M + 20M run below covers all eight configurations (including the ablations
 Same method and scenarios as above, on the shorter 10M warmup + 20M simulated window.
 
 | Trace | Config | Speedup vs LRU | Energy vs LRU (PSC 0 / PSC proxy) | EDP vs LRU |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `429.mcf-51B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
-|  | `itp` | 0.9924 | 1.002 / 1.014 | 1.010 |
-|  | `atp_sbfp_pq` | 1.0006 | 1.105 / 1.096 | 1.105 |
-|  | `atp_sbfp_pq_itp` | 0.9938 | 1.139 / 1.137 | 1.146 |
-|  | `atp` | 1.0000 | 1.046 / 1.042 | 1.046 |
-|  | `atp_itp` | 0.9924 | 1.058 / 1.066 | 1.066 |
-|  | `atp_sbfp` | 1.0008 | 1.164 / 1.150 | 1.163 |
-|  | `atp_sbfp_itp` | 0.9872 | 1.432 / 1.420 | 1.450 |
+| | `itp` | 0.9924 | 1.002 / 1.014 | 1.010 |
+| | `atp_sbfp_pq` | 1.0006 | 1.105 / 1.096 | 1.105 |
+| | `atp_sbfp_pq_itp` | 0.9938 | 1.139 / 1.137 | 1.146 |
+| | `atp` | 1.0000 | 1.046 / 1.042 | 1.046 |
+| | `atp_itp` | 0.9924 | 1.058 / 1.066 | 1.066 |
+| | `atp_sbfp` | 1.0008 | 1.164 / 1.150 | 1.163 |
+| | `atp_sbfp_itp` | 0.9872 | 1.432 / 1.420 | 1.450 |
 | `620.omnetpp_s-874B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
-|  | `itp` | 0.9964 | 1.003 / 1.005 | 1.006 |
-|  | `atp_sbfp_pq` | 1.0002 | 1.074 / 1.069 | 1.073 |
-|  | `atp_sbfp_pq_itp` | 0.9976 | 1.081 / 1.078 | 1.083 |
-|  | `atp` | 1.0000 | 1.032 / 1.030 | 1.032 |
-|  | `atp_itp` | 0.9964 | 1.036 / 1.037 | 1.040 |
-|  | `atp_sbfp` | 0.9983 | 1.090 / 1.085 | 1.092 |
-|  | `atp_sbfp_itp` | 0.9969 | 1.127 / 1.122 | 1.130 |
+| | `itp` | 0.9964 | 1.003 / 1.005 | 1.006 |
+| | `atp_sbfp_pq` | 1.0002 | 1.074 / 1.069 | 1.073 |
+| | `atp_sbfp_pq_itp` | 0.9976 | 1.081 / 1.078 | 1.083 |
+| | `atp` | 1.0000 | 1.032 / 1.030 | 1.032 |
+| | `atp_itp` | 0.9964 | 1.036 / 1.037 | 1.040 |
+| | `atp_sbfp` | 0.9983 | 1.090 / 1.085 | 1.092 |
+| | `atp_sbfp_itp` | 0.9969 | 1.127 / 1.122 | 1.130 |
 | `623.xalancbmk_s-700B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
-|  | `itp` | 0.9969 | 1.001 / 1.002 | 1.004 |
-|  | `atp_sbfp_pq` | 1.0005 | 1.038 / 1.037 | 1.038 |
-|  | `atp_sbfp_pq_itp` | 0.9980 | 1.040 / 1.040 | 1.043 |
-|  | `atp` | 1.0000 | 1.018 / 1.017 | 1.018 |
-|  | `atp_itp` | 0.9969 | 1.019 / 1.020 | 1.023 |
-|  | `atp_sbfp` | 0.9893 | 1.063 / 1.064 | 1.075 |
-|  | `atp_sbfp_itp` | 0.9933 | 1.050 / 1.051 | 1.057 |
+| | `itp` | 0.9969 | 1.001 / 1.002 | 1.004 |
+| | `atp_sbfp_pq` | 1.0005 | 1.038 / 1.037 | 1.038 |
+| | `atp_sbfp_pq_itp` | 0.9980 | 1.040 / 1.040 | 1.043 |
+| | `atp` | 1.0000 | 1.018 / 1.017 | 1.018 |
+| | `atp_itp` | 0.9969 | 1.019 / 1.020 | 1.023 |
+| | `atp_sbfp` | 0.9893 | 1.063 / 1.064 | 1.075 |
+| | `atp_sbfp_itp` | 0.9933 | 1.050 / 1.051 | 1.057 |
 
 ![Speedup against estimated energy, SPEC](docs/figures/spec/pareto_20M.png)
 
@@ -377,19 +382,19 @@ Same method and scenarios as above, on the shorter 10M warmup + 20M simulated wi
 Same measurement and definitions as the SPEC table above (page walks include prefetch walks). Figures are made by `scripts/plot_results.py` from this data.
 
 | Trace | Config | IPC | Speedup vs LRU | STLB MPKI | Page walks | Walks vs LRU |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | `bc.kron-2608B` | `baseline_lru` | 0.2510 | 1.0000 | 18.15 | 1,814,644 | — |
-|  | `itp` | 0.2510 | 0.9999 | 18.28 | 1,828,107 | +0.7% |
-|  | `atp_sbfp_pq` | 0.2510 | 1.0000 | 18.15 | 1,810,048 | −0.3% |
-|  | `atp_sbfp_pq_itp` | 0.2510 | 0.9999 | 18.28 | 1,822,518 | +0.4% |
+| | `itp` | 0.2510 | 0.9999 | 18.28 | 1,828,107 | +0.7% |
+| | `atp_sbfp_pq` | 0.2510 | 1.0000 | 18.15 | 1,810,048 | −0.3% |
+| | `atp_sbfp_pq_itp` | 0.2510 | 0.9999 | 18.28 | 1,822,518 | +0.4% |
 | `bc.road-131B` | `baseline_lru` | 0.1397 | 1.0000 | 8.37 | 836,505 | — |
-|  | `itp` | 0.1399 | 1.0020 | 9.28 | 927,888 | +10.9% |
-|  | `atp_sbfp_pq` | 0.1398 | 1.0011 | 8.36 | 514,241 | −38.5% |
-|  | `atp_sbfp_pq_itp` | 0.1401 | 1.0031 | 9.29 | 607,733 | −27.3% |
+| | `itp` | 0.1399 | 1.0020 | 9.28 | 927,888 | +10.9% |
+| | `atp_sbfp_pq` | 0.1398 | 1.0011 | 8.36 | 514,241 | −38.5% |
+| | `atp_sbfp_pq_itp` | 0.1401 | 1.0031 | 9.29 | 607,733 | −27.3% |
 | `bc.twitter-1658B` | `baseline_lru` | 0.3778 | 1.0000 | 9.55 | 955,310 | — |
-|  | `itp` | 0.3778 | 1.0000 | 9.57 | 957,447 | +0.2% |
-|  | `atp_sbfp_pq` | 0.3854 | 1.0202 | 8.68 | 770,340 | −19.4% |
-|  | `atp_sbfp_pq_itp` | 0.3862 | 1.0223 | 8.73 | 778,027 | −18.6% |
+| | `itp` | 0.3778 | 1.0000 | 9.57 | 957,447 | +0.2% |
+| | `atp_sbfp_pq` | 0.3854 | 1.0202 | 8.68 | 770,340 | −19.4% |
+| | `atp_sbfp_pq_itp` | 0.3862 | 1.0223 | 8.73 | 778,027 | −18.6% |
 
 ![Speedup vs baseline_lru, GAP](docs/figures/gap/speedup.png)
 ![Page walks relative to baseline_lru, GAP](docs/figures/gap/page_walks.png)
@@ -400,19 +405,19 @@ Same measurement and definitions as the SPEC table above (page walks include pre
 Same method and scenarios as the SPEC energy table above.
 
 | Trace | Config | Speedup vs LRU | Energy vs LRU (PSC 0 / PSC proxy) | EDP vs LRU |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `bc.kron-2608B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
-|  | `itp` | 0.9999 | 0.999 / 0.999 | 0.999 |
-|  | `atp_sbfp_pq` | 1.0000 | 1.089 / 1.084 | 1.088 |
-|  | `atp_sbfp_pq_itp` | 0.9999 | 1.087 / 1.083 | 1.087 |
+| | `itp` | 0.9999 | 0.999 / 0.999 | 0.999 |
+| | `atp_sbfp_pq` | 1.0000 | 1.089 / 1.084 | 1.088 |
+| | `atp_sbfp_pq_itp` | 0.9999 | 1.087 / 1.083 | 1.087 |
 | `bc.road-131B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
-|  | `itp` | 1.0020 | 0.995 / 0.997 | 0.993 |
-|  | `atp_sbfp_pq` | 1.0011 | 1.137 / 1.117 | 1.135 |
-|  | `atp_sbfp_pq_itp` | 1.0031 | 1.135 / 1.117 | 1.131 |
+| | `itp` | 1.0020 | 0.995 / 0.997 | 0.993 |
+| | `atp_sbfp_pq` | 1.0011 | 1.137 / 1.117 | 1.135 |
+| | `atp_sbfp_pq_itp` | 1.0031 | 1.135 / 1.117 | 1.131 |
 | `bc.twitter-1658B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
-|  | `itp` | 1.0000 | 0.999 / 0.999 | 0.999 |
-|  | `atp_sbfp_pq` | 1.0202 | 1.109 / 1.097 | 1.087 |
-|  | `atp_sbfp_pq_itp` | 1.0223 | 1.105 / 1.094 | 1.081 |
+| | `itp` | 1.0000 | 0.999 / 0.999 | 0.999 |
+| | `atp_sbfp_pq` | 1.0202 | 1.109 / 1.097 | 1.087 |
+| | `atp_sbfp_pq_itp` | 1.0223 | 1.105 / 1.094 | 1.081 |
 
 ![Speedup against estimated energy, GAP](docs/figures/gap/pareto.png)
 
@@ -425,25 +430,26 @@ Same method and scenarios as the SPEC energy table above.
 To cover the regular side of objective 3 we ran three dense scientific SPEC traces with very low STLB MPKI under LRU (screened earlier as dropped for low pressure): `619.lbm_s-4268B`, `649.fotonik3d_s-1176B` and `654.roms_s-842B`. We did not measure their access pattern ourselves; we call them regular because they are scientific stencil codes, and the ATP counters are consistent with a predictable access pattern (on `649.fotonik3d_s-1176B` ATP selected its `STP` prefetcher on all 13,724 trigger misses, and 13,701 of them found the page already in a fake queue). Raw outputs are in `results/raw_20_100/`. "Page walks (all)" counts every walk the walker performed, including prefetch walks. The last column adds the dynamic-only L1D, L2C and LLC energy from the cache-energy sensitivity below.
 
 | Trace | Config | IPC | Speedup vs LRU | STLB demand MPKI | STLB demand misses | Page walks (all) | of which prefetch | Energy vs LRU (PSC 0 / proxy) | EDP vs LRU | Energy vs LRU with cache energy |
-|---|---|---|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `619.lbm_s-4268B` | `baseline_lru` | 0.4370 | 1.0000 | 0.742 | 74,163 | 74,163 | 0 | 1.000 / 1.000 | 1.000 | 1.000 |
-|  | `itp` | 0.4369 | 0.9998 | 0.711 | 71,100 | 71,100 | 0 | 0.999 / 0.999 | 0.999 | 0.999 |
-|  | `atp_sbfp_pq` | 0.4386 | 1.0038 | 0.028 | 2,773 | 73,784 | 71645 | 1.087 / 1.081 | 1.082 | 1.090 |
-|  | `atp_sbfp_pq_itp` | 0.4386 | 1.0037 | 0.027 | 2,700 | 72,292 | 70180 | 1.086 / 1.080 | 1.082 | 1.089 |
+| | `itp` | 0.4369 | 0.9998 | 0.711 | 71,100 | 71,100 | 0 | 0.999 / 0.999 | 0.999 | 0.999 |
+| | `atp_sbfp_pq` | 0.4386 | 1.0038 | 0.028 | 2,773 | 73,784 | 71645 | 1.087 / 1.081 | 1.082 | 1.090 |
+| | `atp_sbfp_pq_itp` | 0.4386 | 1.0037 | 0.027 | 2,700 | 72,292 | 70180 | 1.086 / 1.080 | 1.082 | 1.089 |
 | `649.fotonik3d_s-1176B` | `baseline_lru` | 0.3870 | 1.0000 | 0.137 | 13,724 | 13,724 | 0 | 1.000 / 1.000 | 1.000 | 1.000 |
-|  | `itp` | 0.3871 | 1.0002 | 0.137 | 13,743 | 13,743 | 0 | 1.000 / 1.000 | 1.000 | 1.000 |
-|  | `atp_sbfp_pq` | 0.3791 | 0.9795 | 0.000 | 23 | 13,813 | 13790 | 1.075 / 1.072 | 1.098 | 1.076 |
-|  | `atp_sbfp_pq_itp` | 0.3791 | 0.9795 | 0.001 | 67 | 14,005 | 13938 | 1.075 / 1.072 | 1.098 | 1.076 |
+| | `itp` | 0.3871 | 1.0002 | 0.137 | 13,743 | 13,743 | 0 | 1.000 / 1.000 | 1.000 | 1.000 |
+| | `atp_sbfp_pq` | 0.3791 | 0.9795 | 0.000 | 23 | 13,813 | 13790 | 1.075 / 1.072 | 1.098 | 1.076 |
+| | `atp_sbfp_pq_itp` | 0.3791 | 0.9795 | 0.001 | 67 | 14,005 | 13938 | 1.075 / 1.072 | 1.098 | 1.076 |
 | `654.roms_s-842B` | `baseline_lru` | 1.8327 | 1.0000 | 0.004 | 395 | 395 | 0 | 1.000 / 1.000 | 1.000 | 1.000 |
-|  | `itp` | 1.8327 | 1.0000 | 0.004 | 395 | 395 | 0 | 1.000 / 1.000 | 1.000 | 1.000 |
-|  | `atp_sbfp_pq` | 1.8346 | 1.0010 | 0.000 | 0 | 422 | 422 | 1.036 / 1.035 | 1.035 | 1.037 |
-|  | `atp_sbfp_pq_itp` | 1.8346 | 1.0010 | 0.000 | 0 | 422 | 422 | 1.036 / 1.035 | 1.035 | 1.037 |
+| | `itp` | 1.8327 | 1.0000 | 0.004 | 395 | 395 | 0 | 1.000 / 1.000 | 1.000 | 1.000 |
+| | `atp_sbfp_pq` | 1.8346 | 1.0010 | 0.000 | 0 | 422 | 422 | 1.036 / 1.035 | 1.035 | 1.037 |
+| | `atp_sbfp_pq_itp` | 1.8346 | 1.0010 | 0.000 | 0 | 422 | 422 | 1.036 / 1.035 | 1.035 | 1.037 |
 
 ![Speedup vs baseline_lru, regular traces](docs/figures/regular/speedup.png)
 ![Page walks relative to baseline_lru, regular traces](docs/figures/regular/page_walks.png)
 ![Speedup against estimated energy, regular traces](docs/figures/regular/pareto.png)
 
 What the regular traces show:
+
 - **iTP does nothing.** Speed is within 0.02% and energy within 0.1% of LRU. With this little STLB pressure there is almost nothing to replace.
 - **ATP+SBFP predicts well but saves no walks.** On `619.lbm_s-4268B` demand STLB misses fall from 74,163 to 2,773 and on `649.fotonik3d_s-1176B` from 13,724 to 23, but the walker performs about as many walks as before (73,784 and 13,813), because each prefetched page needs its own walk. Speed is +0.4% on `619.lbm_s-4268B`, −2.1% on `649.fotonik3d_s-1176B`, and +0.1% on `654.roms_s-842B`.
 - **Energy goes up anyway.** ATP+SBFP costs +3.6% to +8.7% energy (EDP +3.5% to +9.8%), so the fastest configuration is again not the lowest-energy one, and on `649.fotonik3d_s-1176B` it is slower and costs more energy.
@@ -456,38 +462,39 @@ The main tables above exclude the energy of page-walk accesses served by L1D, L2
 SPEC:
 
 | Trace | Config | Speedup vs LRU | Energy vs LRU (PSC 0 / proxy) | EDP vs LRU |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `429.mcf-51B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
-|  | `itp` | 0.9923 | 1.065 / 1.072 | 1.073 |
-|  | `atp_sbfp_pq` | 1.0008 | 1.097 / 1.088 | 1.096 |
-|  | `atp_sbfp_pq_itp` | 0.9937 | 1.184 / 1.179 | 1.191 |
+| | `itp` | 0.9923 | 1.065 / 1.072 | 1.073 |
+| | `atp_sbfp_pq` | 1.0008 | 1.097 / 1.088 | 1.096 |
+| | `atp_sbfp_pq_itp` | 0.9937 | 1.184 / 1.179 | 1.191 |
 | `620.omnetpp_s-874B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
-|  | `itp` | 0.9972 | 1.009 / 1.010 | 1.011 |
-|  | `atp_sbfp_pq` | 1.0003 | 1.068 / 1.064 | 1.068 |
-|  | `atp_sbfp_pq_itp` | 0.9981 | 1.082 / 1.079 | 1.084 |
+| | `itp` | 0.9972 | 1.009 / 1.010 | 1.011 |
+| | `atp_sbfp_pq` | 1.0003 | 1.068 / 1.064 | 1.068 |
+| | `atp_sbfp_pq_itp` | 0.9981 | 1.082 / 1.079 | 1.084 |
 | `623.xalancbmk_s-700B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
-|  | `itp` | 0.9793 | 1.029 / 1.035 | 1.051 |
-|  | `atp_sbfp_pq` | 1.0002 | 1.036 / 1.035 | 1.036 |
-|  | `atp_sbfp_pq_itp` | 0.9804 | 1.074 / 1.077 | 1.095 |
+| | `itp` | 0.9793 | 1.029 / 1.035 | 1.051 |
+| | `atp_sbfp_pq` | 1.0002 | 1.036 / 1.035 | 1.036 |
+| | `atp_sbfp_pq_itp` | 0.9804 | 1.074 / 1.077 | 1.095 |
 
 GAP:
 
 | Trace | Config | Speedup vs LRU | Energy vs LRU (PSC 0 / proxy) | EDP vs LRU |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `bc.kron-2608B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
-|  | `itp` | 0.9999 | 0.999 / 0.999 | 0.999 |
-|  | `atp_sbfp_pq` | 1.0000 | 1.075 / 1.072 | 1.075 |
-|  | `atp_sbfp_pq_itp` | 0.9999 | 1.075 / 1.072 | 1.075 |
+| | `itp` | 0.9999 | 0.999 / 0.999 | 0.999 |
+| | `atp_sbfp_pq` | 1.0000 | 1.075 / 1.072 | 1.075 |
+| | `atp_sbfp_pq_itp` | 0.9999 | 1.075 / 1.072 | 1.075 |
 | `bc.road-131B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
-|  | `itp` | 1.0020 | 1.000 / 1.001 | 0.998 |
-|  | `atp_sbfp_pq` | 1.0011 | 1.108 / 1.092 | 1.107 |
-|  | `atp_sbfp_pq_itp` | 1.0031 | 1.110 / 1.096 | 1.107 |
+| | `itp` | 1.0020 | 1.000 / 1.001 | 0.998 |
+| | `atp_sbfp_pq` | 1.0011 | 1.108 / 1.092 | 1.107 |
+| | `atp_sbfp_pq_itp` | 1.0031 | 1.110 / 1.096 | 1.107 |
 | `bc.twitter-1658B` | `baseline_lru` | 1.0000 | 1.000 / 1.000 | 1.000 |
-|  | `itp` | 1.0000 | 0.999 / 0.999 | 0.999 |
-|  | `atp_sbfp_pq` | 1.0202 | 1.092 / 1.083 | 1.071 |
-|  | `atp_sbfp_pq_itp` | 1.0223 | 1.090 / 1.081 | 1.066 |
+| | `itp` | 1.0000 | 0.999 / 0.999 | 0.999 |
+| | `atp_sbfp_pq` | 1.0202 | 1.092 / 1.083 | 1.071 |
+| | `atp_sbfp_pq_itp` | 1.0223 | 1.090 / 1.081 | 1.066 |
 
 What changes compared with the main tables:
+
 - Prefetching still costs energy on every trace (+3.6% to +10.8% for `atp_sbfp_pq`, +7% to +18% with iTP). The direction of the main result is unchanged.
 - iTP is no longer energy-neutral on SPEC (+0.9% to +6.5%): its extra page walks now pay for the cache accesses they cause. On `bc.road-131B` its small energy advantage disappears (1.000).
 - Cache energy is 3% to 15% of the total under LRU, so the energy overhead of `atp_sbfp_pq` shrinks slightly (for example `bc.road-131B` 1.137 to 1.108) because saved walks now save cache accesses too.
@@ -498,25 +505,25 @@ What changes compared with the main tables:
 Accuracy is the share of issued prefetches that were later used (definitions in [docs/energy-accounting.md](docs/energy-accounting.md)). ATP counts a prefetch as useful when a demand miss finds its page already prefetched; SBFP counts a free prefetch as useful when its prefetch-queue entry hits. A dash means no prefetch of that kind was issued. 100M window.
 
 | Trace | Config | ATP prefetches issued | ATP accuracy | SBFP prefetch-queue inserts | SBFP accuracy | Combined accuracy |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | `429.mcf-51B` | `atp_sbfp_pq` | 0 | — | 4,152,038 | 2.8% | 2.8% |
-|  | `atp_sbfp_pq_itp` | 22,622 | 10.7% | 8,696,385 | 1.8% | 1.9% |
+| | `atp_sbfp_pq_itp` | 22,622 | 10.7% | 8,696,385 | 1.8% | 1.9% |
 | `620.omnetpp_s-874B` | `atp_sbfp_pq` | 0 | — | 1,504,618 | 2.5% | 2.5% |
-|  | `atp_sbfp_pq_itp` | 0 | — | 2,001,710 | 1.8% | 1.8% |
+| | `atp_sbfp_pq_itp` | 0 | — | 2,001,710 | 1.8% | 1.8% |
 | `623.xalancbmk_s-700B` | `atp_sbfp_pq` | 0 | — | 155,477 | 5.0% | 5.0% |
-|  | `atp_sbfp_pq_itp` | 0 | — | 804,690 | 2.5% | 2.5% |
+| | `atp_sbfp_pq_itp` | 0 | — | 804,690 | 2.5% | 2.5% |
 | `bc.kron-2608B` | `atp_sbfp_pq` | 0 | — | 1,466,478 | 0.3% | 0.3% |
-|  | `atp_sbfp_pq_itp` | 0 | — | 1,471,376 | 0.4% | 0.4% |
+| | `atp_sbfp_pq_itp` | 0 | — | 1,471,376 | 0.4% | 0.4% |
 | `bc.road-131B` | `atp_sbfp_pq` | 0 | — | 1,261,967 | 25.5% | 25.5% |
-|  | `atp_sbfp_pq_itp` | 0 | — | 1,439,610 | 22.3% | 22.3% |
+| | `atp_sbfp_pq_itp` | 0 | — | 1,439,610 | 22.3% | 22.3% |
 | `bc.twitter-1658B` | `atp_sbfp_pq` | 271,590 | 32.2% | 2,270,334 | 10.7% | 13.0% |
-|  | `atp_sbfp_pq_itp` | 275,766 | 31.7% | 2,288,958 | 10.6% | 12.9% |
+| | `atp_sbfp_pq_itp` | 275,766 | 31.7% | 2,288,958 | 10.6% | 12.9% |
 | `619.lbm_s-4268B` | `atp_sbfp_pq` | 207,194 | 34.5% | 13,201 | 4.8% | 32.7% |
-|  | `atp_sbfp_pq_itp` | 204,944 | 33.7% | 12,228 | 4.8% | 32.1% |
+| | `atp_sbfp_pq_itp` | 204,944 | 33.7% | 12,228 | 4.8% | 32.1% |
 | `649.fotonik3d_s-1176B` | `atp_sbfp_pq` | 54,896 | 25.0% | 0 | — | 25.0% |
-|  | `atp_sbfp_pq_itp` | 55,072 | 24.9% | 0 | — | 24.9% |
+| | `atp_sbfp_pq_itp` | 55,072 | 24.9% | 0 | — | 24.9% |
 | `654.roms_s-842B` | `atp_sbfp_pq` | 1,580 | 25.0% | 0 | — | 25.0% |
-|  | `atp_sbfp_pq_itp` | 1,580 | 25.0% | 0 | — | 25.0% |
+| | `atp_sbfp_pq_itp` | 1,580 | 25.0% | 0 | — | 25.0% |
 
 - **ATP is idle on five of nine traces.** On `429.mcf-51B` (without iTP), `620.omnetpp_s-874B`, `623.xalancbmk_s-700B`, `bc.kron-2608B` and `bc.road-131B` it issued no prefetches: the `[ATP]` log shows every trigger miss as `disabled`, so its throttling kept it off. `atp_sbfp_pq` there is effectively SBFP alone. ATP is active on `bc.twitter-1658B`, the three regular traces, and `429.mcf-51B` once iTP is added.
 - **ATP accuracy is 25% to 34% when active, except with iTP on `429.mcf-51B` (10.7%).** On `649.fotonik3d_s-1176B` and `654.roms_s-842B` it is about 25%, because ATP issued exactly four prefetches per trigger miss and each trigger miss counts at most one useful hit.
@@ -555,7 +562,7 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 ## Project Status
 
 | Milestone | Status |
-|---|---|
+| --- | --- |
 | Proposal | Complete |
 | Repository, build, baseline run and trace screening | Complete (14 traces screened, 3 selected) |
 | ATP/SBFP and iTP implementation, counters | Complete; all eight configurations run on the three selected SPEC traces (10M + 20M), and the four required configurations on nine traces (20M + 100M) |
@@ -566,7 +573,7 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 ## Decisions
 
 | Decision | Outcome and reason |
-|---|---|
+| --- | --- |
 | iTP without xPTP | Only the STLB replacement part of the ASPLOS 2025 design is implemented; xPTP is not. The paper says iTP alone raises data STLB misses, which our SPEC results show. |
 | Where free (SBFP) prefetches go | Required configurations use a separate 64-entry prefetch queue in the walker, as in the paper. Direct fill into the STLB is kept as an ablation because it pollutes the STLB (up to +43% energy at 10M + 20M). |
 | Traces | Three irregular SPEC traces (`429.mcf-51B`, `620.omnetpp_s-874B`, `623.xalancbmk_s-700B`), three GAP traces (`bc.kron-2608B`, `bc.road-131B`, `bc.twitter-1658B`), chosen by STLB MPKI screening, and three regular SPEC traces (`619.lbm_s-4268B`, `649.fotonik3d_s-1176B`, `654.roms_s-842B`) added to cover objective 3. See Trace selection. |
@@ -581,11 +588,13 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 ## Validity and limits
 
 **What was checked.**
+
 - The 204 values in the SPEC and GAP results tables were recomputed from the raw simulator outputs by an independent script (0 mismatches), and the GAP speedups also match the 100M tables our simulation owner reported separately. The regular-trace, prefetch-accuracy and cache-energy tables come directly from `energy/energy_fusion.py` on the same files and were not recomputed separately.
 - Everything is reproducible from the repository: the raw outputs are in `results/raw_20_100/` and `results/raw_10_20/` (the only change from the original files is that the local directory prefix of each trace path was replaced by `traces/`), and `python3 energy/energy_fusion.py results/raw_20_100/*.txt --out results/tables/results_20_100.csv` regenerates the main table (checked: identical to the committed CSV, and the plots regenerate byte for byte from it). Only the three plots in `docs/figures/analysis/` are not regenerated by a script in the repository.
 - The simulator is deterministic, so a repeated run gives the same counters.
 
 **What this does not establish.**
+
 - The recompute uses the same energy formulas as `energy_fusion.py`; it catches arithmetic and parsing mistakes, not modelling mistakes in the formulas.
 - The size of the energy overhead depends on CACTI proxies and the 90 nm node; the sign (prefetching costs energy) holds in the variants we ran (PSC lower and upper bound, with and without cache energy). We did not rerun the energy totals at 22 nm: only per-access values at 22 nm exist (about 10x lower for the STLB), so the 22 nm effect on the totals is untested.
 - The three regular traces have very low STLB pressure, so they show where policies do nothing or hurt, not where a regular workload benefits. XSBench, which the proposal lists as an example workload, has not been run.
@@ -613,11 +622,11 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 
 ## References
 
-1. G. Vavouliotis et al., "Exploiting page table locality for agile TLB prefetching," in *Proc. 48th Annu. Int. Symp. Comput. Archit. (ISCA)*, 2021, pp. 85–98. https://doi.org/10.1109/ISCA52012.2021.00016.
+1. G. Vavouliotis et al., "Exploiting page table locality for agile TLB prefetching," in *Proc. 48th Annu. Int. Symp. Comput. Archit. (ISCA)*, 2021, pp. 85–98. <https://doi.org/10.1109/ISCA52012.2021.00016>.
 2. D. Chasapis, G. Vavouliotis, D. A. Jiménez, and M. Casas, "Instruction-aware cooperative TLB and cache replacement policies," in *Proc. 30th ACM Int. Conf. Archit. Support Program. Lang. Oper. Syst. (ASPLOS)*, 2025, pp. 619–636.
 3. N. Gober et al., "The Championship Simulator: Architectural Simulation for Education and Competition," arXiv:2210.14324, 2022.
 4. CACTI, Hewlett Packard Labs, <https://github.com/HewlettPackard/cacti>.
-5. H. David, C. Fallin, E. Gorbatov, U. R. Hanebutte, and O. Mutlu, “Memory Power Management via Dynamic Voltage/Frequency Scaling,” in *Proc. 8th ACM Int. Conf. on Autonomic Computing (ICAC)*, 2011, pp. 31–40, Table 2. https://doi.org/10.1145/1998582.1998590.
+5. H. David, C. Fallin, E. Gorbatov, U. R. Hanebutte, and O. Mutlu, “Memory Power Management via Dynamic Voltage/Frequency Scaling,” in *Proc. 8th ACM Int. Conf. on Autonomic Computing (ICAC)*, 2011, pp. 31–40, Table 2. <https://doi.org/10.1145/1998582.1998590>.
 
 ## Authors
 

@@ -17,7 +17,7 @@ Simulation complete CPU 0 instructions: 20000000 cycles: 21782391 cumulative IPC
 ChampSim completed all CPUs
 
 === Simulation ===
-CPU 0 runs /home/oelhanafy/cecs532/traces/623.xalancbmk_s-700B.champsimtrace.xz
+CPU 0 runs traces/623.xalancbmk_s-700B.champsimtrace.xz
 
 Region of Interest Statistics
 

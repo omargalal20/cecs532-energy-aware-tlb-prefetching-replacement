@@ -29,7 +29,7 @@ Simulation complete CPU 0 instructions: 100000003 cycles: 684582399 cumulative I
 ChampSim completed all CPUs
 
 === Simulation ===
-CPU 0 runs /home/oelhanafy/cecs532/traces/429.mcf-51B.champsimtrace.xz
+CPU 0 runs traces/429.mcf-51B.champsimtrace.xz
 
 Region of Interest Statistics
 

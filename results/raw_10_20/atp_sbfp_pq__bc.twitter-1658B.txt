@@ -18,7 +18,7 @@ Simulation complete CPU 0 instructions: 20000002 cycles: 92543630 cumulative IPC
 ChampSim completed all CPUs
 
 === Simulation ===
-CPU 0 runs /home/johnnyv/cecs532-energy-aware-tlb-prefetching-replacement/traces/bc.twitter-1658B.champsimtrace.xz
+CPU 0 runs traces/bc.twitter-1658B.champsimtrace.xz
 
 Region of Interest Statistics
 

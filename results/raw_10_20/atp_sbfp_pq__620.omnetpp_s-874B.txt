@@ -18,7 +18,7 @@ Simulation complete CPU 0 instructions: 20000000 cycles: 49267442 cumulative IPC
 ChampSim completed all CPUs
 
 === Simulation ===
-CPU 0 runs /home/oelhanafy/cecs532/traces/620.omnetpp_s-874B.champsimtrace.xz
+CPU 0 runs traces/620.omnetpp_s-874B.champsimtrace.xz
 
 Region of Interest Statistics
 

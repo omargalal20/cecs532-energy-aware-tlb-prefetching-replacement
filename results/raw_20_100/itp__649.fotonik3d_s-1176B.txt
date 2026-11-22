@@ -26,7 +26,7 @@ Simulation complete CPU 0 instructions: 100000002 cycles: 258324080 cumulative I
 ChampSim completed all CPUs
 
 === Simulation ===
-CPU 0 runs /home/oelhanafy/cecs532/traces/649.fotonik3d_s-1176B.champsimtrace.xz
+CPU 0 runs traces/649.fotonik3d_s-1176B.champsimtrace.xz
 
 Region of Interest Statistics
 

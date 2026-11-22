@@ -4,7 +4,9 @@
 values, and an explicit DRAM-read estimate. All energy results are estimates.
 Missing required CACTI values leave totals and EDP blank. L1D, L2C, and LLC rows
 are optional; if one is unavailable, its page-walk cache energy is excluded and
-the result is labeled accordingly.
+the result is labeled accordingly. `energy/cacti_with_caches.csv` fills these
+three rows (dynamic energy only, 90 nm) for the cache-energy sensitivity in the
+README; the main tables use `energy/cacti_per_access.csv`, where they stay TBD.
 
 ## Counters and energy
 

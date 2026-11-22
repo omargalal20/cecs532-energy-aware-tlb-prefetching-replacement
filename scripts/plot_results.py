@@ -49,8 +49,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("csv", nargs="?", default="results/results_table.csv")
     ap.add_argument("--out", default="results/plots")
+    ap.add_argument("--traces", default="", help="comma-separated trace name prefixes to keep, for example 429,620,623")
     args = ap.parse_args()
     rows = list(csv.DictReader(open(args.csv)))
+    keep = tuple(p for p in args.traces.split(",") if p)
+    if keep:
+        rows = [r for r in rows if r["trace"].startswith(keep)]
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 

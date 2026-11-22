@@ -122,7 +122,7 @@ For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et a
 | --- | --- |
 | Simulator | ChampSim `410cee6`, single core |
 | Core / TLBs | ChampSim defaults: 4 GHz core, STLB 128 sets × 12 ways, 4 KB pages |
-| STLB prefetch queue | `pq_size = 8` (default is 0, which disables STLB prefetching) |
+| STLB prefetch-request queue (ChampSim `pq_size`) | 8 for `baseline_lru` and `itp` (no prefetcher issues requests there) and 32 for the ATP/SBFP configurations (default is 0, which disables STLB prefetching). The ISCA 2021 paper does not specify this queue; the 64-entry prefetch queue it does specify is a separate structure in the page walker and is implemented as such. |
 | Traces | `429.mcf-51B`, `620.omnetpp_s-874B`, `623.xalancbmk_s-700B`, selected by STLB MPKI (see Trace selection below) |
 | Warmup / simulation | 20M warmup + 100M simulated instructions for the four required configurations on the SPEC traces; 10M + 20M for the ablation configurations; 20M warmup + 100M for the four required configurations on the GAP traces as well (a 10M + 20M GAP run is also available) |
 
@@ -611,6 +611,7 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 - Details the papers do not state, which we had to assume (marked `ASSUMPTION` or `assumed` in the code):
   - SBFP: free-distance counters start at 0; a Sampler entry is removed when it hits; the prefetch queue is FIFO and an entry is removed when it hits; free neighbours are looked up when the page walk completes, and only neighbours that are already mapped are prefetched.
   - ATP: the three selection counters start at 128, 32 and 2; the MASP table has 64 entries with LRU replacement.
+  - STLB prefetch-request queue: 32 entries in the ATP/SBFP configurations, our choice, since the paper does not state one. We did not vary it, so its effect on the results is untested.
   - iTP: the 3-bit frequency counter saturates at 7. N=4 and M=8 are the paper's values.
 - Energy inputs are approximations:
   - CACTI cannot build arrays as small as our entries, so DTLB, ITLB, PQ, SBFP sampler, SBFP free-distance table and ATP fake queues use 64 B or 128 B block proxies for 53 to 109 bit entries; their energy and leakage are upper estimates.

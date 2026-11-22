@@ -111,7 +111,7 @@ CACTI did not directly provide the project's 1,536-entry, 128-set × 12-way STLB
 
 The 2,048-to-1,024 ratios are 2.447 read, 2.538 write, and 2.022 leakage at 90 nm; at 22 nm they are 2.291, 2.274, and 1.949. The ratio shifts at 22 nm are −6.38%, −10.43%, and −3.61%, respectively.
 
-For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et al. [5]. Table 2 reports this value for DDR3 at 1333 MHz with two DIMMs per channel and labels its average-read row as **page-closed policy**: 18 nJ array read + 1 nJ read I/O + 12 nJ additional termination + 25 nJ activate/pre-charge. Every access therefore pays for opening and closing a page, so reads that hit an already open page would cost less and 56 nJ leans high. We assume one LLC translation miss is one 64-byte read; the Table 2 caption does not state the access size. The 800 MHz row of the same table is 64.7 nJ, so the value depends on memory frequency. This is a published system estimate, not a measurement of our machine; the project applies it once per LLC `TRANSLATION MISS` counted as one DRAM read.
+For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et al. [5]. Table 2 reports this value for DDR3 at 1333 MHz with two DIMMs per channel and labels its average-read row as **page-closed policy**: 18 nJ array read + 1 nJ read I/O + 12 nJ additional termination + 25 nJ activate/pre-charge. Every access therefore pays for opening and closing a page, so reads that hit an already open page would cost less and 56 nJ leans high. The paper states that a single memory access is 64 bytes (Section 3.3.1), and we count one LLC translation miss as one such read. The 800 MHz row of the same table is 64.7 nJ, so the value depends on memory frequency. This is a published system estimate, not a measurement of our machine; the project applies it once per LLC `TRANSLATION MISS` counted as one DRAM read.
 
 **Metrics.** IPC and speedup over `baseline_lru`; STLB misses (MPKI); page-walk memory references; prefetch accuracy; estimated translation energy; EDP as a derived comparison.
 
@@ -544,7 +544,7 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 
 ### Consistency with published work
 
-- ISCA 2021 (ATP/SBFP) [1] reports larger speedups and walk reductions than we measure, and an energy reduction (we could not verify its energy figures), whereas we measure a small speedup and an energy increase. We have not reproduced its setup (traces, workloads, hardware parameters) and our implementation is simplified, so we do not claim the paper is wrong. We could verify only part of the paper text, so we do not quote its numbers here. The shared observation is that irregular workloads are where ATP matters and that throttling keeps it quiet on some.
+- ISCA 2021 (ATP/SBFP) [1] reports, in its abstract, geometric speedups of 16.2% (Qualcomm), 11.1% (SPEC CPU 2006 and 2017) and 11.8% (GAP and XSBench), and an average reduction of page-walk memory references of 37%, 26% and 5% (Qualcomm, SPEC, Big Data). Our ATP+SBFP speedups are far smaller (within about 0.4% of LRU on seven of nine traces, +2.0% at best) and our SPEC walk changes are −5% to −11%. We also expect an energy comparison to differ: the paper describes lower energy for ATP with SBFP (we could read only part of the paper and did not verify its energy figures), whereas we estimate +4% to +15%. We have not reproduced its setup (traces, hardware parameters), and our implementation is simplified, so we do not claim the paper is wrong. The shared observation is that irregular workloads are where ATP matters and that throttling keeps it quiet on some.
 - ASPLOS 2025 (iTP) [2] states that iTP alone raises data STLB misses and that xPTP is designed to fix this; we do not implement xPTP. Its evaluation targets 120 server traces with STLB MPKI of at least 1.0 and shows SPEC only in motivation, so our data-heavy traces are outside what it evaluates. Our slowdown on SPEC is therefore consistent with its stated limits, not a contradiction. It reports no energy results.
 - To our knowledge, no published work compares TLB prefetching and STLB replacement policies on energy in one setup; we found only energy work on TLB organisation (for example Karakostas et al., HPCA 2016), which finds that L1 TLBs dominate dynamic translation energy. That agrees with the DTLB/ITLB share in our breakdown.
 
@@ -608,7 +608,7 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 
 ## References
 
-1. G. Vavouliotis et al., "Exploiting page table locality for agile TLB prefetching," in *Proc. 48th Annu. Int. Symp. Comput. Archit. (ISCA)*, 2021, pp. 85–98.
+1. G. Vavouliotis et al., "Exploiting page table locality for agile TLB prefetching," in *Proc. 48th Annu. Int. Symp. Comput. Archit. (ISCA)*, 2021, pp. 85–98. https://doi.org/10.1109/ISCA52012.2021.00016.
 2. D. Chasapis, G. Vavouliotis, D. A. Jiménez, and M. Casas, "Instruction-aware cooperative TLB and cache replacement policies," in *Proc. 30th ACM Int. Conf. Archit. Support Program. Lang. Oper. Syst. (ASPLOS)*, 2025, pp. 619–636.
 3. N. Gober et al., "The Championship Simulator: Architectural Simulation for Education and Competition," arXiv:2210.14324, 2022.
 4. CACTI, Hewlett Packard Labs, <https://github.com/HewlettPackard/cacti>.

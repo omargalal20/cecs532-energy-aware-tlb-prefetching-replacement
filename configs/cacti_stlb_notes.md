@@ -1,5 +1,7 @@
 # Preliminary STLB CACTI estimates
 
+> Superseded: this is the early Nov 7 note. The final model uses a 52-bit PPN and the linear midpoint of the 8-way and 16-way runs for the 1536-entry STLB. See `docs/cacti-sensitivity.md` and the README.
+
 These are preliminary proxy estimates, not final TLB energy values.
 
 Assumptions:

@@ -544,7 +544,7 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 - SPEC traces (`429.mcf-51B`, `620.omnetpp_s-874B`, `623.xalancbmk_s-700B`) have STLB demand miss ratios of 14%, 21% and 6%, so there is reuse for the replacement policy to disturb: iTP changes page walks by +20% to +121% and slows execution.
 - `bc.kron-2608B` and `bc.twitter-1658B` miss on 98% of STLB demand lookups, so replacement has almost nothing to act on (iTP changes walks by about 0%). `bc.road-131B` is in between (56%).
 - ATP+SBFP removes the most walks on `bc.road-131B` (−38.5%, speed +0.1%) and `bc.twitter-1658B` (−19%, speed +2.0%). Why `bc.kron-2608B` shows no change under ATP+SBFP is not established by our data.
-- Reading the miss ratios as thrashing versus reuse is our interpretation; we did not run an experiment that isolates it. The instruction share of the SPEC traces is small (about 0% for `429.mcf-51B`, about 1.6% for `623.xalancbmk_s-700B`), which is consistent with iTP's data-side cost being visible, but we did not test that link.
+- Reading the miss ratios as thrashing versus reuse is our interpretation; we did not run an experiment that isolates it. The instruction share of the SPEC traces is small (about 0% for `429.mcf-51B`, about 1.6% for `623.xalancbmk_s-700B` in the 100M window, versus 0.7% in the 20M screening table), which is consistent with iTP's data-side cost being visible, but we did not test that link.
 
 ### Consistency with published work
 
@@ -587,7 +587,7 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 
 **What this does not establish.**
 - The recompute uses the same energy formulas as `energy_fusion.py`; it catches arithmetic and parsing mistakes, not modelling mistakes in the formulas.
-- The size of the energy overhead depends on CACTI proxies and the 90 nm node; the sign (prefetching costs energy) holds in all our variants (dynamic-only, 22 nm).
+- The size of the energy overhead depends on CACTI proxies and the 90 nm node; the sign (prefetching costs energy) holds in the variants we ran (PSC lower and upper bound, with and without cache energy). We did not rerun the energy totals at 22 nm: only per-access values at 22 nm exist (about 10x lower for the STLB), so the 22 nm effect on the totals is untested.
 - The three regular traces have very low STLB pressure, so they show where policies do nothing or hurt, not where a regular workload benefits. XSBench, which the proposal lists as an example workload, has not been run.
 - The main tables exclude energy of L1D, L2C and LLC accesses made by page walks. The [cache-energy sensitivity](#cache-energy-sensitivity-l1d-l2c-llc-energy-for-page-walk-accesses) adds it (dynamic only, L1D value interpolated): the prefetching overhead shrinks by up to 3 points and iTP stops being energy-neutral on SPEC, but the ranking of the required configurations does not change.
 - Windows are 100M instructions. Phase effects matter (see the iTP result on `623.xalancbmk_s-700B`).

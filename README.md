@@ -495,7 +495,7 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 | ATP/SBFP and iTP implementation, counters | Complete; all eight configurations run on the three selected SPEC traces (10M + 20M), and the four required configurations on nine traces (20M + 100M) |
 | CACTI models of TLB, PQ and SBFP structures | Complete at 90 nm with proxies (PSC unavailable); L1D, L2C and LLC added as a dynamic-only sensitivity; see Limitations |
 | Full experiment set and energy fusion | Complete: speed and estimated energy for irregular SPEC, GAP and regular SPEC traces |
-| Validation and analysis | Complete: README tables recomputed from the raw outputs (204 values, no mismatches); Pareto, workload-type and literature comparison in Results |
+| Validation and analysis | Complete: main results tables recomputed independently from the raw outputs (204 values, no mismatches); Pareto, workload-type and literature comparison in Results |
 
 ## Decisions
 

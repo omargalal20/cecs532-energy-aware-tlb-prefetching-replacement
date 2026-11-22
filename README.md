@@ -111,7 +111,7 @@ CACTI did not directly provide the project's 1,536-entry, 128-set × 12-way STLB
 
 The 2,048-to-1,024 ratios are 2.447 read, 2.538 write, and 2.022 leakage at 90 nm; at 22 nm they are 2.291, 2.274, and 1.949. The ratio shifts at 22 nm are −6.38%, −10.43%, and −3.61%, respectively.
 
-For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et al. [5]. Table 2 reports this value for DDR3 at 1333 MHz with two DIMMs per channel and labels its average-read row as **page-closed policy**: 18 nJ array read + 1 nJ read I/O + 12 nJ additional termination + 25 nJ activate/pre-charge. Every access therefore pays for opening and closing a page, so reads that hit an already open page would cost less and 56 nJ leans high. We assume one LLC translation miss is one 64-byte read; the Table 2 caption does not state the access size. The 800 MHz row of the same table is 64.7 nJ, so the value depends on memory frequency. This is a published system estimate, not a measurement of our machine; the project applies it once per LLC `TRANSLATION MISS` counted as one DRAM read.
+For page-walk memory energy, use **56 nJ per 64-byte DRAM read** from David et al. [5]. Table 2 reports this value for DDR3 at 1333 MHz with two DIMMs per channel and labels its average-read row as **page-closed policy**: 18 nJ array read + 1 nJ read I/O + 12 nJ additional termination + 25 nJ activate/pre-charge. Every access therefore pays for opening and closing a page, so reads that hit an already open page would cost less and 56 nJ leans high. The paper states that a single memory access is 64 bytes (Section 3.3.1), and we count one LLC translation miss as one such read. The 800 MHz row of the same table is 64.7 nJ, so the value depends on memory frequency. This is a published system estimate, not a measurement of our machine; the project applies it once per LLC `TRANSLATION MISS` counted as one DRAM read.
 
 **Metrics.** IPC and speedup over `baseline_lru`; STLB misses (MPKI); page-walk memory references; prefetch accuracy; estimated translation energy; EDP as a derived comparison.
 
@@ -489,6 +489,36 @@ What changes compared with the main tables:
 - Cache energy is 3% to 15% of the total under LRU, so the energy overhead of `atp_sbfp_pq` shrinks slightly (for example `bc.road-131B` 1.137 to 1.108) because saved walks now save cache accesses too.
 - The ranking is now LRU < iTP < ATP+SBFP < ATP+SBFP+iTP on SPEC and LRU ≈ iTP < ATP+SBFP ≈ ATP+SBFP+iTP on GAP; the fastest configuration is still not the lowest-energy one.
 
+### Prefetch accuracy
+
+Accuracy is the share of issued prefetches that were later used (definitions in [docs/energy-accounting.md](docs/energy-accounting.md)). ATP counts a prefetch as useful when a demand miss finds its page already prefetched; SBFP counts a free prefetch as useful when its prefetch-queue entry hits. A dash means no prefetch of that kind was issued. 100M window.
+
+| Trace | Config | ATP prefetches issued | ATP accuracy | SBFP prefetch-queue inserts | SBFP accuracy | Combined accuracy |
+|---|---|---|---|---|---|---|
+| `429.mcf-51B` | `atp_sbfp_pq` | 0 | — | 4,152,038 | 2.8% | 2.8% |
+|  | `atp_sbfp_pq_itp` | 22,622 | 10.7% | 8,696,385 | 1.8% | 1.9% |
+| `620.omnetpp_s-874B` | `atp_sbfp_pq` | 0 | — | 1,504,618 | 2.5% | 2.5% |
+|  | `atp_sbfp_pq_itp` | 0 | — | 2,001,710 | 1.8% | 1.8% |
+| `623.xalancbmk_s-700B` | `atp_sbfp_pq` | 0 | — | 155,477 | 5.0% | 5.0% |
+|  | `atp_sbfp_pq_itp` | 0 | — | 804,690 | 2.5% | 2.5% |
+| `bc.kron-2608B` | `atp_sbfp_pq` | 0 | — | 1,466,478 | 0.3% | 0.3% |
+|  | `atp_sbfp_pq_itp` | 0 | — | 1,471,376 | 0.4% | 0.4% |
+| `bc.road-131B` | `atp_sbfp_pq` | 0 | — | 1,261,967 | 25.5% | 25.5% |
+|  | `atp_sbfp_pq_itp` | 0 | — | 1,439,610 | 22.3% | 22.3% |
+| `bc.twitter-1658B` | `atp_sbfp_pq` | 271,590 | 32.2% | 2,270,334 | 10.7% | 13.0% |
+|  | `atp_sbfp_pq_itp` | 275,766 | 31.7% | 2,288,958 | 10.6% | 12.9% |
+| `619.lbm_s-4268B` | `atp_sbfp_pq` | 207,194 | 34.5% | 13,201 | 4.8% | 32.7% |
+|  | `atp_sbfp_pq_itp` | 204,944 | 33.7% | 12,228 | 4.8% | 32.1% |
+| `649.fotonik3d_s-1176B` | `atp_sbfp_pq` | 54,896 | 25.0% | 0 | — | 25.0% |
+|  | `atp_sbfp_pq_itp` | 55,072 | 24.9% | 0 | — | 24.9% |
+| `654.roms_s-842B` | `atp_sbfp_pq` | 1,580 | 25.0% | 0 | — | 25.0% |
+|  | `atp_sbfp_pq_itp` | 1,580 | 25.0% | 0 | — | 25.0% |
+
+- **ATP is idle on five of nine traces.** On `429.mcf-51B` (without iTP), `620.omnetpp_s-874B`, `623.xalancbmk_s-700B`, `bc.kron-2608B` and `bc.road-131B` it issued no prefetches: the `[ATP]` log shows every trigger miss as `disabled`, so its throttling kept it off. `atp_sbfp_pq` there is effectively SBFP alone. ATP is active on `bc.twitter-1658B`, the three regular traces, and `429.mcf-51B` once iTP is added.
+- **ATP accuracy is 25% to 34% when active, except with iTP on `429.mcf-51B` (10.7%).** On `649.fotonik3d_s-1176B` and `654.roms_s-842B` it is about 25%, because ATP issued exactly four prefetches per trigger miss and each trigger miss counts at most one useful hit.
+- **SBFP accuracy ranges from 0.3% to 25.5%.** It is lowest on `bc.kron-2608B` (0.3%), 2% to 5% on the SPEC traces, and highest on `bc.road-131B` (25.5%), the trace with the largest walk reduction (−38.5%). ATP is off on that trace, so the reduction comes from free prefetching.
+- Low accuracy is consistent with the energy cost: most prefetch-structure activity does not turn into saved walks.
+
 ### Answers to the objectives
 
 **Objective 1 (speedup and energy per configuration).** See the tables above. In short, `baseline_lru` and `itp` cost the least energy; `atp_sbfp_pq` and `atp_sbfp_pq_itp` cost 4% to 15% more.
@@ -514,7 +544,7 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 
 ### Consistency with published work
 
-- ISCA 2021 (ATP/SBFP) [1] reports larger speedups and walk reductions than we measure, and an energy reduction (we could not verify its energy figures), whereas we measure a small speedup and an energy increase. We have not reproduced its setup (traces, workloads, hardware parameters) and our implementation is simplified, so we do not claim the paper is wrong. We could verify only part of the paper text, so we do not quote its numbers here. The shared observation is that irregular workloads are where ATP matters and that throttling keeps it quiet on some.
+- ISCA 2021 (ATP/SBFP) [1] reports, in its abstract, geometric speedups of 16.2% (Qualcomm), 11.1% (SPEC CPU 2006 and 2017) and 11.8% (GAP and XSBench), and an average reduction of page-walk memory references of 37%, 26% and 5% (Qualcomm, SPEC, Big Data). Our ATP+SBFP speedups are far smaller (within about 0.4% of LRU on seven of nine traces, +2.0% at best) and our SPEC walk changes are −5% to −11%. We also expect an energy comparison to differ: the paper describes lower energy for ATP with SBFP (we could read only part of the paper and did not verify its energy figures), whereas we estimate +4% to +15%. We have not reproduced its setup (traces, hardware parameters), and our implementation is simplified, so we do not claim the paper is wrong. The shared observation is that irregular workloads are where ATP matters and that throttling keeps it quiet on some.
 - ASPLOS 2025 (iTP) [2] states that iTP alone raises data STLB misses and that xPTP is designed to fix this; we do not implement xPTP. Its evaluation targets 120 server traces with STLB MPKI of at least 1.0 and shows SPEC only in motivation, so our data-heavy traces are outside what it evaluates. Our slowdown on SPEC is therefore consistent with its stated limits, not a contradiction. It reports no energy results.
 - To our knowledge, no published work compares TLB prefetching and STLB replacement policies on energy in one setup; we found only energy work on TLB organisation (for example Karakostas et al., HPCA 2016), which finds that L1 TLBs dominate dynamic translation energy. That agrees with the DTLB/ITLB share in our breakdown.
 
@@ -578,7 +608,7 @@ Because energy is lowest for LRU or iTP and speed is highest for a prefetching c
 
 ## References
 
-1. G. Vavouliotis et al., "Exploiting page table locality for agile TLB prefetching," in *Proc. 48th Annu. Int. Symp. Comput. Archit. (ISCA)*, 2021, pp. 85–98.
+1. G. Vavouliotis et al., "Exploiting page table locality for agile TLB prefetching," in *Proc. 48th Annu. Int. Symp. Comput. Archit. (ISCA)*, 2021, pp. 85–98. https://doi.org/10.1109/ISCA52012.2021.00016.
 2. D. Chasapis, G. Vavouliotis, D. A. Jiménez, and M. Casas, "Instruction-aware cooperative TLB and cache replacement policies," in *Proc. 30th ACM Int. Conf. Archit. Support Program. Lang. Oper. Syst. (ASPLOS)*, 2025, pp. 619–636.
 3. N. Gober et al., "The Championship Simulator: Architectural Simulation for Education and Competition," arXiv:2210.14324, 2022.
 4. CACTI, Hewlett Packard Labs, <https://github.com/HewlettPackard/cacti>.
